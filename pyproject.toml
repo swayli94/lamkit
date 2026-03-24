@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lamkit"
+version = "0.1.0"
+description = "Toolkit for stress analysis and failure prediction of composite laminates with holes and joints."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+  { name = "lamkit contributors" }
+]
+keywords = ["composite", "laminate", "stress-analysis", "engineering"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering"
+]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "matplotlib>=3.7"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "build>=1.2",
+  "twine>=5.1"
+]
+docs = [
+  "sphinx>=8.0",
+  "furo>=2024.8.6",
+  "myst-parser>=4.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/lamkit"
+Documentation = "https://your-org.github.io/lamkit/"
+Repository = "https://github.com/your-org/lamkit"
+Issues = "https://github.com/your-org/lamkit/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lamkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
