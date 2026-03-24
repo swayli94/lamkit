@@ -11,7 +11,7 @@ Date: 2025-10-29
 
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 
 from lamkit.analysis.material import Ply
 
@@ -19,7 +19,6 @@ from lamkit.analysis.material import Ply
 class Laminate():
     '''
     Laminate class for Classical Lamination Theory (CLT).
-    It requires Ply objects (to define plies) and angle information.
 
     Parameters
     ----------
@@ -33,6 +32,16 @@ class Laminate():
             T: thickness}
     plies : Ply or list
         A single Ply or a list of Ply object
+
+    Units
+    ------
+    Angles: degrees
+    Thickness: mm
+    Load: N
+    Moment: N*mm
+    Strain: unitless
+    Stress: MPa
+    Material properties: MPa and mm
 
     Note
     -----
@@ -93,7 +102,7 @@ class Laminate():
         self._B = None
         self._D = None
         self._ABD = None
-        self._ABD_p = None
+        self._ABD_inverse_matrix = None
         self._xiA = xiA
         self._xiB = xiB
         self._xiD = xiD
@@ -125,53 +134,36 @@ class Laminate():
         return ply_position
     
     @property
-    def Q_layup(self) -> List[np.ndarray]:    
+    def Q_layup(self) -> List[np.ndarray]:
+        '''
+        Transformed reduced stiffness matrix of each ply in the laminate.
+        
+        Returns
+        -------
+        Q_layup: List[np.ndarray [3, 3]]
+            Transformed reduced stiffness matrix of each ply in the laminate.
+        '''
         if self._Q_layup is None:
-            
-            self._Q_layup = []
-            for theta, ply in self.layup:
-                c = np.cos(theta*np.pi/180)
-                s = np.sin(theta*np.pi/180)
-
-                T_real = np.array([
-                    [c**2, s**2, 2*c*s],
-                    [s**2, c**2, -2*c*s],
-                    [-c*s, c*s, c**2-s**2]
-                    ])
-                T_engineering =  np.array([
-                    [c**2, s**2, c*s],
-                    [s**2, c**2, -c*s],
-                    [-2*c*s, 2*c*s, c**2-s**2]
-                    ])
-
-                self._Q_layup.append(
-                    (np.linalg.inv(T_real))
-                    @ ply('Q')
-                    @ T_engineering
-                    )
+            self._Q_layup = [ply.get_Q_bar(theta) for theta, ply in self.layup]
         return self._Q_layup
      
     @property
     def T_layup(self) -> List[np.ndarray]:
+        '''
+        Transformation matrix of each ply in the laminate.
+        
+        Returns
+        -------
+        T_layup: List[Tuple[np.ndarray [3, 3], np.ndarray [3, 3]]]
+            Transformation matrix of each ply in the laminate.
+            The first ndarray is the transformation matrix for this ply.
+            The second ndarray is the engineering transformation matrix for this ply.
+        '''
         if self._T_layup is None:
-            
             self._T_layup = []
             for theta in self.layup:
-                c = np.cos(theta[0]*np.pi/180)
-                s = np.sin(theta[0]*np.pi/180)
-
-                T_real = np.array([
-                    [c**2, s**2, 2*c*s],
-                    [s**2, c**2, -2*c*s],
-                    [-c*s, c*s, c**2-s**2]
-                    ])
-
-                T_engineering =  np.array([
-                    [c**2, s**2, c*s],
-                    [s**2, c**2, -c*s],
-                    [-2*c*s, 2*c*s, c**2-s**2]
-                    ])
-
+                T_real = self.ply_material.get_rotation_matrix(theta)
+                T_engineering = self.ply_material.get_engineering_rotation_matrix(theta)
                 self._T_layup.append([T_real,T_engineering])
         return self._T_layup
    
@@ -201,6 +193,39 @@ class Laminate():
         return self._xiA
 
     @property
+    def xiB(self) -> np.ndarray:
+        '''
+        Lamination parameter xiB for extension-bending coupling.
+
+        Returns
+        -------
+        xiB : np.ndarray (4,)
+            (4/T²) Σ_k (z_{k+1}² - z_k²) [cos2θ, sin2θ, cos4θ, sin4θ] per ply k.
+        '''
+        if isinstance(self.stacking, dict):
+            if self._xiB is None:
+                raise ValueError(
+                    'xiB is required in stacking dict for coupling parameters'
+                )
+            return np.asarray(self._xiB, dtype=float)
+
+        xiB = np.zeros(4)
+        T = sum([ply.thickness for ply in self.plies])
+        for i, angle in enumerate(self.stacking):
+            angle *= np.pi / 180
+            zk1 = self.z_position[i+1]
+            zk0 = self.z_position[i]
+
+            dz2 = zk1**2 - zk0**2
+            xiB[0] += dz2 * np.cos(2*angle)
+            xiB[1] += dz2 * np.sin(2*angle)
+            xiB[2] += dz2 * np.cos(4*angle)
+            xiB[3] += dz2 * np.sin(4*angle)
+
+        self._xiB = 4 * xiB / T**2
+        return self._xiB
+    
+    @property
     def xiD(self) -> np.ndarray:
         '''
         Lamination parameter xiD for bending
@@ -226,27 +251,14 @@ class Laminate():
 
     @property
     def A(self) -> np.ndarray:
-        '''[A] Matrix as numpy.ndarray '''
-
-        if not self._xiA is None:
-
-            U1, U2, U3, U4, U5 = self.ply_material('invariants')
-            xi1, xi2, xi3, xi4 = self._xiA
-            T = self._total_thickness
-            A11 = T*(U1 + U2*xi1 + U3*xi3)
-            A12 = T*(-U3*xi3 + U4)
-            A13 = T*(U2*xi2/2 + U3*xi4)
-            A21 = T*(-U3*xi3 + U4)
-            A22 = T*(U1 - U2*xi1 + U3*xi3)
-            A23 = T*(U2*xi2/2 - U3*xi4)
-            A31 = T*(U2*xi2/2 + U3*xi4)
-            A32 = T*(U2*xi2/2 - U3*xi4)
-            A33 = T*(-U3*xi3 + U5)
-
-            self._A = np.array([[A11, A12, A13],
-                                [A21, A22, A23],
-                                [A31, A32, A33]])
-
+        '''
+        [A] matrix of the laminate for extension.
+        
+        Returns
+        -------
+        A : np.ndarray (3x3)
+            [A] Matrix of the laminate
+        '''
         if self._A is None:
             self._A = np.zeros(9).reshape(3,3)
 
@@ -254,15 +266,13 @@ class Laminate():
                 zk1 = self.z_position[i[0]+1]
                 zk0 = self.z_position[i[0]]
                 self._A += (zk1-zk0) * i[1]
-        
         return self._A
     
     @property
     def B(self) -> np.ndarray:
         '''
         [B] matrix of the laminate for coupling between extension and bending.
-        Matrix [B] will be zero if defined using lamination parameters.
-               
+
         Returns
         -------
         B : np.ndarray (3x3)
@@ -280,36 +290,15 @@ class Laminate():
     @property
     def D(self) -> np.ndarray:
         '''
-        [D] matrix of the laminate
+        [D] matrix of the laminate for bending.
 
         Returns
         -------
         D : np.ndarray (3x3)
             [D] matrix of the laminate
         '''
-
-        if not self._xiD is None:
-
-            U1, U2, U3, U4, U5 = self.ply_material('invariants')
-            xi1, xi2, xi3, xi4 = self._xiD
-            T = self._total_thickness
-
-            D11 = T**3*(U1 + U2*xi1 + U3*xi3)/12
-            D12 = T**3*(-U3*xi3 + U4)/12
-            D13 = T**3*(U2*xi2/2 + U3*xi4)/12
-            D21 = T**3*(-U3*xi3 + U4)/12
-            D22 = T**3*(U1 - U2*xi1 + U3*xi3)/12
-            D23 = T**3*(U2*xi2/2 - U3*xi4)/12
-            D31 = T**3*(U2*xi2/2 + U3*xi4)/12
-            D32 = T**3*(U2*xi2/2 - U3*xi4)/12
-            D33 = T**3*(-U3*xi3 + U5)/12
-
-            self._D = np.array([[D11, D12, D13],
-                                [D21, D22, D23],
-                                [D31, D32, D33]])
-
         if self._D is None:
-            self._D = np.zeros(9).reshape(3,3)
+            self._D = np.zeros((3,3))
 
             for i in enumerate(self.Q_layup):
                 zk1 = self.z_position[i[0]+1]
@@ -444,7 +433,95 @@ class Laminate():
             Mid plane strains, i.e., [epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0].
         '''
         return self.ABD_inverse_matrix @ N
+
+    def _ply_invariants(self) -> np.ndarray:
+        '''[U1..U5] from the first ply (uniform-material laminates).'''
+        p = self.plies
+        if isinstance(p, list):
+            return p[0]('invariants')
+        return p('invariants')
     
+    def get_A_from_lamination_parameters(self) -> np.ndarray:
+        '''
+        Calculate the [A] matrix from the lamination parameters.
+        
+        Returns
+        -------
+        A: np.ndarray (3x3)
+            [A] matrix of the laminate
+        '''
+        U1, U2, U3, U4, U5 = self._ply_invariants()
+        xi1, xi2, xi3, xi4 = self.xiA
+        T = self._total_thickness
+        A11 = T*(U1 + U2*xi1 + U3*xi3)
+        A12 = T*(-U3*xi3 + U4)
+        A13 = T*(U2*xi2/2 + U3*xi4)
+        A21 = T*(-U3*xi3 + U4)
+        A22 = T*(U1 - U2*xi1 + U3*xi3)
+        A23 = T*(U2*xi2/2 - U3*xi4)
+        A31 = T*(U2*xi2/2 + U3*xi4)
+        A32 = T*(U2*xi2/2 - U3*xi4)
+        A33 = T*(-U3*xi3 + U5)
+
+        return np.array([[A11, A12, A13],
+                        [A21, A22, A23],
+                        [A31, A32, A33]])
+
+    def get_B_from_lamination_parameters(self) -> np.ndarray:
+        '''
+        Calculate the [B] matrix from the lamination parameters.
+        
+        Returns
+        -------
+        B: np.ndarray (3x3)
+            [B] matrix of the laminate
+        '''
+        _, U2, U3, _, _ = self._ply_invariants()
+        xi1, xi2, xi3, xi4 = self.xiB
+        T = self._total_thickness
+        fac = T**2 / 8.0
+        # Invariant terms proportional to U1, U4, U5 drop out: Σ_k (z_{k+1}² - z_k²) = 0.
+        B11 = fac * (U2*xi1 + U3*xi3)
+        B12 = fac * (-U3*xi3)
+        B13 = fac * (U2*xi2/2 + U3*xi4)
+        B21 = B12
+        B22 = fac * (-U2*xi1 + U3*xi3)
+        B23 = fac * (U2*xi2/2 - U3*xi4)
+        B31 = B13
+        B32 = B23
+        B33 = fac * (-U3*xi3)
+
+        return np.array([[B11, B12, B13],
+                        [B21, B22, B23],
+                        [B31, B32, B33]])
+
+    def get_D_from_lamination_parameters(self) -> np.ndarray:
+        '''
+        Calculate the [D] matrix from the lamination parameters.
+        
+        Returns
+        -------
+        D: np.ndarray (3x3)
+            [D] matrix of the laminate
+        '''
+        U1, U2, U3, U4, U5 = self._ply_invariants()
+        xi1, xi2, xi3, xi4 = self.xiD
+        T = self._total_thickness
+
+        D11 = T**3*(U1 + U2*xi1 + U3*xi3)/12
+        D12 = T**3*(-U3*xi3 + U4)/12
+        D13 = T**3*(U2*xi2/2 + U3*xi4)/12
+        D21 = T**3*(-U3*xi3 + U4)/12
+        D22 = T**3*(U1 - U2*xi1 + U3*xi3)/12
+        D23 = T**3*(U2*xi2/2 - U3*xi4)/12
+        D31 = T**3*(U2*xi2/2 + U3*xi4)/12
+        D32 = T**3*(U2*xi2/2 - U3*xi4)/12
+        D33 = T**3*(-U3*xi3 + U5)/12
+
+        return np.array([[D11, D12, D13],
+                        [D21, D22, D23],
+                        [D31, D32, D33]])
+
 
     def calculate_strain(self, N: np.ndarray) -> pd.DataFrame:
         '''
@@ -453,7 +530,9 @@ class Laminate():
         Parameters
         ----------
         N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy]
+            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
+            Nxx, Nyy, Nxy: in-plane forces (N/mm)
+            Mxx, Myy, Mxy: bending moments (N)
 
         Returns
         -------
@@ -475,7 +554,9 @@ class Laminate():
         Parameters
         ----------
         N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy]
+            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
+            Nxx, Nyy, Nxy: in-plane forces (N/mm)
+            Mxx, Myy, Mxy: bending moments (N)
 
         Returns
         -------
@@ -502,8 +583,80 @@ class Laminate():
         ----------
         ABD: np.ndarray (6x6)
             ABD matrix of the laminate
+            (Material properties described in MPa and mm)
+            
+        N: np.ndarray (6,)
+            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
+            Nxx, Nyy, Nxy: in-plane forces (N/mm)
+            Mxx, Myy, Mxy: bending moments (N)
+
+        Returns
+        -------
+        epsilon0: np.ndarray (6,)
+            Mid plane strains, i.e.,
+            [epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0].
         '''
         return np.linalg.inv(ABD) @ N
+
+    @staticmethod
+    def strain_xy_at_z(epsilon6: np.ndarray, z: Union[np.ndarray, float]) -> np.ndarray:
+        '''
+        Global engineering strains [ex, ey, gxy] through the thickness (CLT).
+
+        Parameters
+        ----------
+        epsilon6 : np.ndarray (6,)
+            Mid-plane generalised strains
+            [ex0, ey0, gxy0, kx, ky, kxy].
+        z : np.ndarray or float
+            Through-thickness coordinate(s) (mm), same convention as z_position.
+
+        Returns
+        -------
+        epsilon_xy : np.ndarray (n_z, 3)
+            Rows are [ex, ey, gxy] at each z.
+        '''
+        zv = np.atleast_1d(np.asarray(z, dtype=float))
+        e0 = np.asarray(epsilon6[:3], dtype=float)
+        k = np.asarray(epsilon6[3:6], dtype=float)
+        return e0 + zv[:, np.newaxis] * k
+
+    @staticmethod
+    def strain_xy_global_to_material(epsilon_xy: np.ndarray, theta_deg: float) -> np.ndarray:
+        '''
+        Transform engineering strains from plate x-y to ply material 1-2.
+
+        Same convention as get_epsilon_plies_123 / NASA handbook.
+        '''
+        v = np.asarray(epsilon_xy, dtype=float).reshape(3).copy()
+        th = np.radians(theta_deg)
+        c, s = np.cos(th), np.sin(th)
+        v[2] /= 2.0
+        T = np.array(
+            [
+                [c**2, s**2, 2 * c * s],
+                [s**2, c**2, -2 * c * s],
+                [-c * s, c * s, c**2 - s**2],
+            ]
+        )
+        e123 = T @ v
+        e123 = np.asarray(e123, dtype=float).copy()
+        e123[2] *= 2.0
+        return e123
+
+    @staticmethod
+    def stress_xy_global_from_strain(epsilon_xy: np.ndarray, Q_bar: np.ndarray) -> np.ndarray:
+        '''Global stresses [sx, sy, txy] from global strains and transformed stiffness [Q_bar].'''
+        exy = np.asarray(epsilon_xy, dtype=float).reshape(3)
+        return Q_bar @ exy
+
+    @staticmethod
+    def stress_material_from_strain(
+        epsilon_xy: np.ndarray, Q_material: np.ndarray, theta_deg: float
+        ) -> np.ndarray:
+        '''Material stresses [s1, s2, t12] from global strains and ply [Q] in material axes.'''
+        e123 = Laminate.strain_xy_global_to_material(epsilon_xy, theta_deg)
+        return Q_material @ e123
 
     @staticmethod
     def get_epsilon_plies(epsilon0: np.ndarray, n_ply: int,
@@ -575,27 +728,13 @@ class Laminate():
         epsilon_plies_123 = []
         for theta, epsilon_k in zip(stacking, epsilon_plies):
             epsilon_top, epsilon_bot = epsilon_k
-            # Make copies to avoid modifying the originals
-            epsilon_top = epsilon_top.copy()
-            epsilon_bot = epsilon_bot.copy()
-            
-            c = np.cos(theta*np.pi/180)
-            s = np.sin(theta*np.pi/180)
-            epsilon_top[2] /= 2 # engineering shear strain (see nasa pg 50)
-            epsilon_bot[2] /= 2
+            epsilon_plies_123.append(
+                (
+                    Laminate.strain_xy_global_to_material(epsilon_top, theta),
+                    Laminate.strain_xy_global_to_material(epsilon_bot, theta),
+                )
+            )
 
-            T = np.array([
-                [c**2, s**2, 2*c*s],
-                [s**2, c**2, -2*c*s],
-                [-c*s, c*s, c**2-s**2]
-                ])
-
-            cur_epsilon_top = T @ epsilon_top
-            cur_epsilon_bot = T @ epsilon_bot
-            cur_epsilon_top[2] *= 2
-            cur_epsilon_bot[2] *= 2
-            epsilon_plies_123.append((cur_epsilon_top, cur_epsilon_bot)) # engineering shear strain (see nasa pg 50)
-        
         return epsilon_plies_123
 
 
@@ -645,7 +784,8 @@ class Laminate():
             List of ply angles in degrees
             
         stress_plies : List[Tuple[np.ndarray, np.ndarray]]
-            List of stress tuples (stress_top, stress_bot) for each ply in global coordinates
+            List of stress tuples (stress_top, stress_bot)
+            for each ply in global coordinates
             
         Returns
         -------
@@ -688,10 +828,13 @@ class Laminate():
         Parameters
         ----------
         ABD: np.ndarray (6x6)
-            ABD matrix of the laminate
+            ABD matrix of the laminate.
+            (Material properties described in MPa and mm)
             
         N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy]
+            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
+            Nxx, Nyy, Nxy: in-plane forces (N/mm)
+            Mxx, Myy, Mxy: bending moments (N)
             
         stacking: List[float]
             List of ply angles in degrees
@@ -702,7 +845,8 @@ class Laminate():
         Returns
         -------
         strain_field: pd.DataFrame
-            Strain field of the laminate, ply by ply in plate direction and material direction
+            Strain field of the laminate, ply by ply in plate direction
+            and material direction
         '''
         n_ply = len(stacking)
         epsilon0 = Laminate.get_epsilon0(ABD, N)
@@ -758,9 +902,12 @@ class Laminate():
         ----------
         ABD: np.ndarray (6x6)
             ABD matrix of the laminate
+            (Material properties described in MPa and mm)
             
         N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy]
+            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
+            Nxx, Nyy, Nxy: in-plane forces (N/mm)
+            Mxx, Myy, Mxy: bending moments (N)
             
         stacking: List[float]
             List of ply angles in degrees
@@ -774,7 +921,8 @@ class Laminate():
         Returns
         -------
         stress_field: pd.DataFrame
-            Stress field of the laminate, ply by ply in plate direction and material direction
+            Stress field (MPa) of the laminate, ply by ply in plate direction
+            and material direction.
         '''
         n_ply = len(stacking)
         epsilon0 = Laminate.get_epsilon0(ABD, N)

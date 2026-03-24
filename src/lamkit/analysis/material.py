@@ -120,6 +120,11 @@ class Material(object):
         '''
         Get the 2D rotation matrix for the material.
         
+        Use this matrix (and its inverse on the appropriate side) when transforming
+        **stress-like** Voigt vectors `[sigma_1, sigma_2, tau_12]^T`. It matches the
+        tensor rotation with a factor of 2 on the shear coupling terms, consistent with
+        `tau_ij` as the engineering shear stress in the stress-strain law.
+        
         Parameters
         ----------
         angle_degree: float
@@ -139,6 +144,10 @@ class Material(object):
     def get_inverse_rotation_matrix(self, angle_degree: float) -> np.ndarray:
         '''
         Get the inverse of the 2D rotation matrix for the material.
+        
+        Pre-multiplies `[Q]` in `[Q_bar]` because stresses transform with the
+        inverse of the strain/engineering transform so that
+        `[sigma_bar] = [Q_bar][epsilon_bar]` holds in the rotated axes.
         
         Parameters
         ----------
@@ -160,7 +169,11 @@ class Material(object):
         '''
         Get the 2D engineering rotation matrix for the material.
         
-        Using the engineering because of the `gamma_12`.
+        Use this when transforming **engineering strain**
+        `[epsilon_1, epsilon_2, gamma_12]^T`, where `gamma_12 = 2 * epsilon_12`
+        (tensor shear). That extra factor changes the third row/column of the
+        transform relative to the stress matrix; omitting it would mix tensor and
+        engineering shear definitions.
         
         Parameters
         ----------
@@ -181,6 +194,10 @@ class Material(object):
     def get_Q_bar(self, angle_degree: float) -> np.ndarray:
         '''
         Transformed reduced stiffness matrix, [Q_bar] matrix (3x3) of the Material.
+        
+        Implemented as `inv( stress-rotate ) @ Q @ ( engineering-strain rotate )` so
+        the same Voigt definitions as in `Q` (stresses vs. `epsilon` and `gamma`)
+        apply in the off-axis system.
         
         Parameters
         ----------
@@ -248,27 +265,48 @@ class Ply():
         else:
             return self._name
 
+    def get_Q_bar(self, angle_degree: float) -> np.ndarray:
+        '''
+        Get the transformed reduced stiffness matrix of the ply.
+        
+        Parameters
+        ----------
+        angle_degree: float
+            Angle in degrees.
+            
+        Returns
+        -------
+        Q_bar: np.ndarray [3, 3]
+            Transformed reduced stiffness matrix.
+        '''
+        return self._material.get_Q_bar(angle_degree)
+
 
 MATERIAL_IM7_8551_7 = {
-    'E11':      1.6500E+5,  # Young’s modulus along the fibre direction
-    'E22':      8.4000E+3,  # Young’s modulus along transverse direction
-    'nu12':     3.4000E-1,  # Poisson’s ratio
-    'G12':      5.6000E+3,  # In plane shear modulus 1-2 plane
-    'Xt':       2.5600E+3,  # Longitudinal tensile strength
-    'Xc':       1.5900E+3,  # Longitudinal compressive strength
-    'Yt':       7.3000E+1,  # Transverse tensile strength 
-    'Yc':       1.8500E+2,  # Transverse compressive strength
-    'Sl':       9.0000E+1,  # In plane shear strength
-    'a0':       5.3000E+1,  # Fracture angle for pure compression (53 degree)
-    'nL':       8.2000E-2,  # Longitudinal shear friction coefficient
-    'nT':       None,       # Transverse shear friction coefficient
-    'ILSS':     9.0000E+1,  # Inter-laminar shear strength
-    'Zt':       6.3000E+1,  # Tensile strength in the 3rd direction
-    'G1cMat':   2.1000E-1,  # Matrix mode I  critical energy release rate
-    'G2cMat':   8.0000E-1,  # Matrix mode II critical energy release rate
-    'G1cFibT':  9.2000E+1,  # Fibre tensile  critical energy release rate
-    'G1cFibK':  8.0000E+1,  # Fibre kinking  critical energy release rate
-    'GAlphaM':  1.2100E+0,  # Matrix mixed-mode power law exponent (1.21)
+    'E11':      1.6500E+5,  # Young’s modulus along the fibre direction (MPa)
+    'E22':      8.4000E+3,  # Young’s modulus along transverse direction (MPa)
+    'nu12':     3.4000E-1,  # Poisson’s ratio (unitless)
+    'G12':      5.6000E+3,  # In plane shear modulus 1-2 plane (MPa)
+    'Xt':       2.5600E+3,  # Longitudinal tensile strength (MPa)
+    'Xc':       1.5900E+3,  # Longitudinal compressive strength (MPa)
+    'Yt':       7.3000E+1,  # Transverse tensile strength (MPa)
+    'Yc':       1.8500E+2,  # Transverse compressive strength (MPa)
+    'Sl':       9.0000E+1,  # In plane shear strength (MPa)
+    'a0':       5.3000E+1,  # Fracture angle for pure compression (degree)
+    'nL':       8.2000E-2,  # Longitudinal shear friction coefficient (unitless)
+    'nT':       None,       # Transverse shear friction coefficient (unitless)
+    'ILSS':     9.0000E+1,  # Inter-laminar shear strength (MPa)
+    'Zt':       6.3000E+1,  # Tensile strength in the 3rd direction (MPa)
+    'G1cMat':   2.1000E-1,  # Matrix mode I  critical energy release rate (N/mm, kJ/m^2)
+    'G2cMat':   8.0000E-1,  # Matrix mode II critical energy release rate (N/mm, kJ/m^2)
+    'G1cFibT':  9.2000E+1,  # Fibre tensile  critical energy release rate (N/mm, kJ/m^2)
+    'G1cFibK':  8.0000E+1,  # Fibre kinking  critical energy release rate (N/mm, kJ/m^2)
+    'GAlphaM':  1.2100E+0,  # Matrix mixed-mode power law exponent (unitless)
 }
+
+'''
+MPa usually used along with mm
+GPa usually used along with m
+'''
 
 IM7_8551_7 = Material('IM7/8551-7', MATERIAL_IM7_8551_7)
