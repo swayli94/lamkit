@@ -14,12 +14,11 @@ import pandas as pd
 from typing import List, Tuple, Dict
 
 from lamkit.analysis.material import Ply
-from lamkit.analysis.larc05 import LaRC05
 
 
 class Laminate():
     '''
-    This class creates a Laminate object.
+    Laminate class for Classical Lamination Theory (CLT).
     It requires Ply objects (to define plies) and angle information.
 
     Parameters
@@ -147,7 +146,7 @@ class Laminate():
 
                 self._Q_layup.append(
                     (np.linalg.inv(T_real))
-                    @ ply('Q_0')
+                    @ ply('Q')
                     @ T_engineering
                     )
         return self._Q_layup
@@ -394,8 +393,25 @@ class Laminate():
     @property
     def in_plane_compliance_matrix(self) -> np.ndarray:
         '''
-        Get the in-plane compliance matrix of the laminate.
+        Equivalent plane-stress compliance for a homogeneous plate (3x3).
+
+        Returns h * inv(A), i.e. S_eq = (A/h)^(-1), where h is total thickness
+        and A is the CLT extensional stiffness. This relates thickness-averaged
+        in-plane stress sigma_bar = N/h to mid-plane strain:
+        epsilon0 = S_eq @ sigma_bar (with N = A @ epsilon0 under pure membrane
+        response, B = 0 and kappa = 0).
+
+        This is NOT inv(A): the latter maps stress resultants N to epsilon0
+        (epsilon0 = inv(A) @ N) and has different physical dimensions.
+
+        Notes
+        -----
+        For 2D hole problems (e.g. Lekhnitskii), the solver expects the material
+        compliance S in epsilon = S @ sigma (Pa-level stresses). Using S_eq
+        matches that convention for an equivalent homogeneous laminate.
+        If B is non-zero, an equivalent S_eq is only an approximation.
         '''
+        # S_eq = (A/h)^(-1) for epsilon0 = S_eq @ (N/h); see docstring.
         compliance = self._total_thickness * np.linalg.inv(self.A)
         return compliance
    
@@ -425,7 +441,7 @@ class Laminate():
         Returns
         ------------------
         epsilon0: np.ndarray
-            Mid plane strains, i.e., [epsilon_x0, epsilon_y0, epsilon_xy0, kappa_x0, kappa_y0, kappa_xy0].
+            Mid plane strains, i.e., [epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0].
         '''
         return self.ABD_inverse_matrix @ N
     
@@ -802,49 +818,4 @@ class Laminate():
             cur_ply += 1
         pd.set_option('display.precision', 2)
         return pd.DataFrame(data)
-
-
-def get_failure_field(stress_field: pd.DataFrame) -> pd.DataFrame:
-    '''
-    Get the failure field of the laminate.
-    
-    Parameters
-    ----------
-    stress_field: pd.DataFrame
-        Stress field of the laminate, ply by ply in plate direction and material direction.
-        Including the following columns:
-        [ply, position, angle, sigmax, sigmay, tauxy, sigma1, sigma2, tau12]
-        
-    Returns
-    -------
-    failure_field: pd.DataFrame
-        Failure indices of the laminate plies, including the following columns:
-        [ply, position, angle, FI_max, FI_matrix_cracking, FI_matrix_splitting, FI_fibre_tension, FI_fibre_kinking, FI_matrix_interface]
-    '''
-    failure_field = pd.DataFrame(
-        columns=['ply', 'position', 'angle', 
-                    'FI_max', 'FI_matrix_cracking', 'FI_matrix_splitting', 
-                    'FI_fibre_tension', 'FI_fibre_kinking', 'FI_matrix_interface'],
-        )
-    
-    larc05 = LaRC05(nSCply=3) # 2D element, 3 stress components
-    
-    for index, row in stress_field.iterrows():
-        
-        ply_stresses = np.array([row['sigma1'], row['sigma2'], row['tau12']])
-        failure_indices = larc05.get_uvarm(ply_stresses)
-        
-        failure_field.at[index, 'ply'] = row['ply']
-        failure_field.at[index, 'position'] = row['position']
-        failure_field.at[index, 'angle'] = row['angle']
-        failure_field.at[index, 'FI_max'] = failure_indices[5]
-        failure_field.at[index, 'FI_matrix_cracking'] = failure_indices[0]
-        failure_field.at[index, 'FI_matrix_splitting'] = failure_indices[1]
-        failure_field.at[index, 'FI_fibre_tension'] = failure_indices[2]
-        failure_field.at[index, 'FI_fibre_kinking'] = failure_indices[3]
-        failure_field.at[index, 'FI_matrix_interface'] = failure_indices[4]
-    
-    return failure_field
-
-    
 

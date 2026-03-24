@@ -27,7 +27,7 @@ def test_material_nu21_reciprocal_relation():
 
 
 def test_Q_0_symmetric_positive_diagonal():
-    Q = IM7_8551_7.Q_0
+    Q = IM7_8551_7.Q
     assert Q.shape == (3, 3)
     assert np.allclose(Q, Q.T)
     assert Q[0, 0] > 0 and Q[1, 1] > 0 and Q[2, 2] > 0

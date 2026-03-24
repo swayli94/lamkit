@@ -44,8 +44,8 @@ class Material(object):
         '''
         if key == 'nu21':
             return self._nu21
-        elif key == 'Q_0' or key == 'stiffness_matrix':
-            return self.Q_0
+        elif key == 'Q' or key == 'stiffness_matrix':
+            return self.Q
         elif key == 'invariants':
             return self.invariants
         elif key == 'compliance_matrix':
@@ -62,14 +62,24 @@ class Material(object):
         return self.get_property(key)
 
     @property
-    def Q_0(self) -> np.ndarray:
+    def Q(self) -> np.ndarray:
         '''
-        Reduced stiffness matrix, [Q] matrix (3x3) of the Material      
+        Reduced stiffness matrix, [Q] matrix (3x3) of the Material.
+        
+        - `[sigma_1, sigma_2, tau_12]^T = [Q] * [epsilon_1, epsilon_2, gamma_12]^T`
+        - `epsilon_1 = epsilon0_1 + z*kappa_1`
+        - `epsilon_2 = epsilon0_2 + z*kappa_2`
+        - `gamma_12 = gamma0_12 + z*kappa_12`
+        - `epsilon0_1, epsilon0_2, gamma0_12` are the mid-plane strains.
+        - `kappa_1, kappa_2, kappa_12` are the curvatures.
         '''
         if self._Q_0 is None:
-            Q11 = self.get_property('E11') / (1-self.get_property('nu12')*self.get_property('nu21')) 
-            Q12 = (self.get_property('nu12')*self.get_property('E22')) / (1-self.get_property('nu12')*self.get_property('nu21'))
-            Q22 = self.get_property('E22') / (1-self.get_property('nu12')*self.get_property('nu21'))
+            
+            m = 1-self.get_property('nu12')*self.get_property('nu21')
+            
+            Q11 = self.get_property('E11') / m
+            Q12 = self.get_property('E22') * self.get_property('nu12') / m
+            Q22 = self.get_property('E22') / m
             Q66 = self.get_property('G12')
             self._Q_0 = np.array([[Q11, Q12, 0],
                                    [Q12, Q22, 0],
@@ -81,8 +91,8 @@ class Material(object):
         '''
         Compliance matrix (3x3) of the Material.
         '''
-        return np.linalg.inv(self.Q_0)
-
+        return np.linalg.inv(self.Q)
+    
     @property
     def invariants(self) -> np.ndarray:
         '''
@@ -90,10 +100,10 @@ class Material(object):
         '''
         if self._invariants is None:
             
-            Q11 = self.Q_0[0, 0]
-            Q12 = self.Q_0[0, 1]
-            Q22 = self.Q_0[1, 1]
-            Q66 = self.Q_0[2, 2]
+            Q11 = self.Q[0, 0]
+            Q12 = self.Q[0, 1]
+            Q22 = self.Q[1, 1]
+            Q66 = self.Q[2, 2]
 
             U1 = 1/8 * (3*Q11 + 3*Q22 + 2*Q12 + 4*Q66)
             U2 = 1/2 * (Q11 - Q22)
@@ -106,9 +116,88 @@ class Material(object):
         return self._invariants
 
 
+    def get_rotation_matrix(self, angle_degree: float) -> np.ndarray:
+        '''
+        Get the 2D rotation matrix for the material.
+        
+        Parameters
+        ----------
+        angle_degree: float
+            Angle in degrees.
+            
+        Returns
+        -------
+        rotation_matrix: np.ndarray [3, 3]
+            Rotation matrix.
+        '''
+        c = np.cos(angle_degree*np.pi/180)
+        s = np.sin(angle_degree*np.pi/180)
+        return np.array([[c**2, s**2, 2*c*s],
+                         [s**2, c**2, -2*c*s],
+                         [-c*s, c*s, c**2-s**2]])
+    
+    def get_inverse_rotation_matrix(self, angle_degree: float) -> np.ndarray:
+        '''
+        Get the inverse of the 2D rotation matrix for the material.
+        
+        Parameters
+        ----------
+        angle_degree: float
+            Angle in degrees.
+            
+        Returns
+        -------
+        inverse_rotation_matrix: np.ndarray [3, 3]
+            Inverse rotation matrix.
+        '''
+        c = np.cos(angle_degree*np.pi/180)
+        s = np.sin(angle_degree*np.pi/180)
+        return np.array([[c**2, s**2, -2*c*s],
+                         [s**2, c**2, 2*c*s],
+                         [c*s, -c*s, c**2-s**2]])
+        
+    def get_engineering_rotation_matrix(self, angle_degree: float) -> np.ndarray:
+        '''
+        Get the 2D engineering rotation matrix for the material.
+        
+        Using the engineering because of the `gamma_12`.
+        
+        Parameters
+        ----------
+        angle_degree: float
+            Angle in degrees.
+            
+        Returns
+        -------
+        engineering_rotation_matrix: np.ndarray [3, 3]
+            Engineering rotation matrix.
+        '''
+        c = np.cos(angle_degree*np.pi/180)
+        s = np.sin(angle_degree*np.pi/180)
+        return np.array([[c**2, s**2, c*s],
+                         [s**2, c**2, -c*s],
+                         [-2*c*s, 2*c*s, c**2-s**2]])
+
+    def get_Q_bar(self, angle_degree: float) -> np.ndarray:
+        '''
+        Transformed reduced stiffness matrix, [Q_bar] matrix (3x3) of the Material.
+        
+        Parameters
+        ----------
+        angle_degree: float
+            Angle in degrees.
+            
+        Returns
+        -------
+        Q_bar: np.ndarray [3, 3]
+            Transformed reduced stiffness matrix.
+        '''
+        return self.get_inverse_rotation_matrix(angle_degree) @ self.Q @ self.get_engineering_rotation_matrix(angle_degree)
+
+
 class Ply():
     '''
-    Ply class.
+    Ply (or Lamina) class.
     
     Parameters
     ----------
