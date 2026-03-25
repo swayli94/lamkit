@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
-from lamkit.utils import evaluate_unloaded_hole_stress_field
+from lamkit.utils import midplane_stresses_unloaded_hole
 from lamkit.lekhnitskii.utils import generate_meshgrid
 
 
@@ -29,7 +29,7 @@ def test_theoretical_far_field_uniaxial_x():
     R = 50.0
     x = np.array([R])
     y = np.array([0.0])
-    sxx, syy, txy = evaluate_unloaded_hole_stress_field(
+    sxx, syy, txy = midplane_stresses_unloaded_hole(
         sig_inf, 0.0, 0.0, hole_radius=1.0, compliance_matrix=S, x=x, y=y
     )
     assert sxx.item() == pytest.approx(sig_inf, rel=0.02)
@@ -47,7 +47,7 @@ def test_isotropic_stress_concentration_uniaxial_x():
     # Just outside hole on +y axis; hoop direction aligns with x.
     y = a * (1.0 + eps)
     x = 0.0
-    sxx, syy, txy = evaluate_unloaded_hole_stress_field(
+    sxx, syy, txy = midplane_stresses_unloaded_hole(
         sig_inf, 0.0, 0.0, hole_radius=a, compliance_matrix=S, x=x, y=y
     )
     Kt = np.asarray(sxx).item() / sig_inf

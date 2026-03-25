@@ -23,10 +23,9 @@ import numpy as np
 import pandas as pd
 
 from lamkit.analysis.laminate import Laminate
-from lamkit.analysis.larc05 import LaRC05
 from lamkit.analysis.material import IM7_8551_7, Ply
 
-DPI = 300
+DPI = 100
 PLY_T_MM = 0.125
 # When max(x) - min(x) is below this, set a symmetric x-window around the data mean.
 X_SPAN_SMALL = 1e-3
@@ -67,7 +66,7 @@ def build_connected_profile(
     z_top: np.ndarray,
     n_ply: int,
     value_at: Callable[[int, float], float],
-) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
     """
     Piecewise-linear (value, z) path through all plies, monotonic in z.
     Always visits each ply bottom and top so the polyline matches ply_endpoint_markers.
@@ -98,7 +97,7 @@ def ply_endpoint_markers(
     z_top: np.ndarray,
     n_ply: int,
     value_at: Callable[[int, float], float],
-) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
     """Solid markers at each ply bottom and top (interfaces may appear twice if values jump)."""
     xs: list[float] = []
     zs: list[float] = []
@@ -112,21 +111,46 @@ def ply_endpoint_markers(
     return np.asarray(xs), np.asarray(zs)
 
 
+def _value_at_face(
+    field: pd.DataFrame,
+    col: str,
+    z_bot: np.ndarray,
+    z_top: np.ndarray,
+    ) -> Callable[[int, float], float]:
+    """Look up ``col`` at ply ``i`` bottom (``z == z_bot[i]``) or top (``z == z_top[i]``)."""
+    idx = field.set_index(['index_ply', 'index_surface'])
+
+    def value_at(i: int, z: float) -> float:
+        z = float(z)
+        zb, zt = float(z_bot[i]), float(z_top[i])
+        if np.isclose(z, zb, rtol=0.0, atol=1e-9):
+            return float(idx.loc[(i, 0), col])
+        if np.isclose(z, zt, rtol=0.0, atol=1e-9):
+            return float(idx.loc[(i, 1), col])
+        raise ValueError(f'z={z} is not a face of ply {i} (expect {zb} or {zt})')
+
+    return value_at
+
+
 def plot_laminate_response(
     lam: Laminate,
     N: np.ndarray,
     title: str,
     out_path: str,
-) -> None:
+    field: pd.DataFrame | None = None,
+    ) -> None:
     """
     One figure per laminate load case: strains, stresses, and LaRC05 failure indices vs z
     (6 rows × 3 cols; rows 0–3 stress/strain, rows 4–5 LaRC05).
+
+    If ``field`` is None, it is filled with ``evaluate_laminate(lam, N)``.
     """
     z_if = np.asarray(lam.z_position, dtype=float)
     z_bot = z_if[:-1]
     z_top = z_if[1:]
-    eps6 = lam.get_mid_plane_strains(N)
-    larc = LaRC05(nSCply=3, material="IM7/8551-7")
+    if field is None:
+        field = lam.evaluate_laminate(N)
+    eps6 = np.asarray(field.attrs['epsilon0'], dtype=float)
 
     row_labels = (
         (r"$\varepsilon_x$", r"$\varepsilon_y$", r"$\gamma_{xy}$"),
@@ -135,10 +159,10 @@ def plot_laminate_response(
         (r"$\sigma_1$", r"$\sigma_2$", r"$\tau_{12}$"),
     )
     row_title = (
-        "strain (plate x–y)",
-        "strain (material 1–2)",
-        "stress (plate x–y), MPa",
-        "stress (material 1–2), MPa",
+        "strain (plate x-y)",
+        "strain (material 1-2)",
+        "stress (plate x-y), MPa",
+        "stress (material 1-2), MPa",
         "LaRC05 FI (cracking, splitting, tension)",
         "LaRC05 FI (kinking, interface, FI_max)",
     )
@@ -156,7 +180,7 @@ def plot_laminate_response(
         ax.axhline(0.0, color="k", linewidth=0.5, linestyle=":")
         ax.grid(True, alpha=0.3)
 
-    n_ply = len(lam.layup)
+    n_ply = lam.n_ply
 
     for j in range(3):
         ax = axes[0, j]
@@ -171,25 +195,22 @@ def plot_laminate_response(
         _maybe_widen_small_x_range(ax, xs0)
         ax.set_xlabel(row_labels[0][j])
 
+    stress_strain_cols = {
+        (1, 0): 'epsilon_1',
+        (1, 1): 'epsilon_2',
+        (1, 2): 'gamma_12',
+        (2, 0): 'sigma_x',
+        (2, 1): 'sigma_y',
+        (2, 2): 'tau_xy',
+        (3, 0): 'sigma_1',
+        (3, 1): 'sigma_2',
+        (3, 2): 'tau_12',
+    }
+
     for row in (1, 2, 3):
         for j in range(3):
-
-            def value_at(i: int, z: float) -> float:
-                theta, ply = lam.layup[i]
-                exy = Laminate.strain_xy_at_z(eps6, z)[0]
-                if row == 1:
-                    return float(Laminate.strain_xy_global_to_material(exy, theta)[j])
-                if row == 2:
-                    return float(
-                        Laminate.stress_xy_global_from_strain(
-                            exy, ply.get_Q_bar(theta)
-                        )[j]
-                    )
-                return float(
-                    Laminate.stress_material_from_strain(
-                        exy, ply("Q"), theta
-                    )[j]
-                )
+            col = stress_strain_cols[(row, j)]
+            value_at = _value_at_face(field, col, z_bot, z_top)
 
             xs, zs = build_connected_profile(z_bot, z_top, n_ply, value_at)
             mx, mz = ply_endpoint_markers(z_bot, z_top, n_ply, value_at)
@@ -199,17 +220,20 @@ def plot_laminate_response(
             _maybe_widen_small_x_range(ax, xs)
             ax.set_xlabel(row_labels[row][j])
 
+    fi_cols = (
+        'FI_matrix_cracking',
+        'FI_matrix_splitting',
+        'FI_fibre_tension',
+        'FI_fibre_kinking',
+        'FI_matrix_interface',
+        'FI_max',
+    )
+
     for fi_row in (0, 1):
         for j in range(3):
             fi_idx = fi_row * 3 + j
             ax = axes[4 + fi_row, j]
-
-            def value_at(i: int, z: float, _k: int = fi_idx) -> float:
-                theta, ply = lam.layup[i]
-                exy = Laminate.strain_xy_at_z(eps6, z)[0]
-                s123 = Laminate.stress_material_from_strain(exy, ply("Q"), theta)
-                uvarm = larc.get_uvarm(np.asarray(s123, dtype=float))
-                return float(uvarm[_k])
+            value_at = _value_at_face(field, fi_cols[fi_idx], z_bot, z_top)
 
             xs, zs = build_connected_profile(z_bot, z_top, n_ply, value_at)
             mx, mz = ply_endpoint_markers(z_bot, z_top, n_ply, value_at)
@@ -247,22 +271,33 @@ def main() -> None:
 
     for name, (stacking, slug) in stacks.items():
         lam = Laminate(stacking, [ply] * len(stacking))
-        h = sum(p.thickness for _, p in lam.layup)
+        h = sum(p.thickness for p in lam.plies)
         print(f"\n=== {name} ===")
         print(f"Total thickness: {h:.3f} mm")
         print(f"A11 = {lam.A[0, 0]:.1f} N/mm,  D11 = {lam.D[0, 0]:.2f} N.mm")
         print("Mid-plane strains under N_pull [ex0, ey0, gxy0, kx, ky, kxy]:")
         print(np.round(lam.get_mid_plane_strains(N_pull), 6))
-        df_s = lam.calculate_stress(N_pull)
-        print("Ply-wise stress (top & bot surfaces):")
+        field = lam.evaluate_laminate(N_pull)
+        print("Ply face field (bottom to top; index_surface 0=bot, 1=top):")
+        show_cols = [
+            'index_ply',
+            'index_surface',
+            'z',
+            'angle',
+            'sigma_1',
+            'sigma_2',
+            'tau_12',
+            'FI_max',
+        ]
         with pd.option_context("display.max_rows", 12):
-            print(df_s.to_string(index=False))
+            print(field[show_cols].to_string(index=False))
 
         plot_laminate_response(
             lam,
             N_pull,
             title=f"{name}, membrane Nxx={N_pull[0]:.0f} N/mm",
             out_path=os.path.join(out_dir, f"laminate_membrane_{slug}.png"),
+            field=field,
         )
 
     # Same stack, bending-only loading

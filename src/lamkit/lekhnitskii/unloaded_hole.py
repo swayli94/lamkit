@@ -176,7 +176,7 @@ class UnloadedHole(Hole):
         
         return _stress
 
-    def calculate_stress_results(self, x: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
+    def calculate_field_results(self, x: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
         '''
         Calculates the stress at (x, y) points in the plate
         
@@ -188,22 +188,21 @@ class UnloadedHole(Hole):
         Returns
         -------
         field: Dict[str, np.ndarray]
-            Dictionary containing the stress and sign fields
-            'sigma_x': np.ndarray of shape (n,)
-            'sigma_y': np.ndarray of shape (n,)
-            'tau_xy': np.ndarray of shape (n,)
-            'sign_xi1': np.ndarray of shape (n,)
-            'sign_xi2': np.ndarray of shape (n,)
-            'Real(phi_1_prime)': np.ndarray of shape (n,)
-            'Real(phi_2_prime)': np.ndarray of shape (n,)
-            'Imag(phi_1_prime)': np.ndarray of shape (n,)
-            'Imag(phi_2_prime)': np.ndarray of shape (n,)
+            Same keys as `Hole.calculate_field_results`; stresses include the
+            remote field, and strains are `S @ sigma` for that total stress.
         '''
-        field = super().calculate_stress_results(x, y)
-        
+        field = super().calculate_field_results(x, y)
+
         field['sigma_x'] += self.sigma_xx_inf
         field['sigma_y'] += self.sigma_yy_inf
         field['tau_xy'] += self.tau_xy_inf
-        
+
+        stress_stack = np.stack(
+            [field['sigma_x'], field['sigma_y'], field['tau_xy']], axis=0)
+        strain_stack = self.s @ stress_stack
+        field['epsilon_x'] = strain_stack[0]
+        field['epsilon_y'] = strain_stack[1]
+        field['gamma_xy'] = strain_stack[2]
+
         return field
 

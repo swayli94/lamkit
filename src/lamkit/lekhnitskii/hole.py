@@ -311,10 +311,10 @@ class Hole(abc.ABC):
     # ------------------------------
     # For detailed analysis
     # ------------------------------
-    def calculate_stress_results(self, x: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
+    def calculate_field_results(self, x: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
         '''
-        Calculates the stress at (x, y) points in the plate
-        
+        Calculates stress, strain, and displacement at (x, y) points in the plate.
+
         Parameters
         ----------
         x, y : np.ndarray of shape (n,)
@@ -323,16 +323,13 @@ class Hole(abc.ABC):
         Returns
         -------
         field: Dict[str, np.ndarray]
-            Dictionary containing the stress and sign fields
-            'sigma_x': np.ndarray of shape (n,)
-            'sigma_y': np.ndarray of shape (n,)
-            'tau_xy': np.ndarray of shape (n,)
-            'sign_xi1': np.ndarray of shape (n,)
-            'sign_xi2': np.ndarray of shape (n,)
-            'Real(phi_1_prime)': np.ndarray of shape (n,)
-            'Real(phi_2_prime)': np.ndarray of shape (n,)
-            'Imag(phi_1_prime)': np.ndarray of shape (n,)
-            'Imag(phi_2_prime)': np.ndarray of shape (n,)
+            Dictionary containing stress, strain, displacement, and auxiliary fields
+            'sigma_x', 'sigma_y', 'tau_xy': np.ndarray of shape (n,)
+            'epsilon_x', 'epsilon_y', 'gamma_xy': np.ndarray of shape (n,)
+                in-plane strains from ``epsilon = S @ sigma`` (engineering shear `gamma_xy`)
+            'u', 'v': np.ndarray of shape (n,) — x, y displacements (same as `displacement`)
+            'sign_xi1', 'sign_xi2': np.ndarray of shape (n,)
+            'Real(phi_1_prime)', 'Real(phi_2_prime)', 'Imag(phi_1_prime)', 'Imag(phi_2_prime)'
         '''
         mu1 = self.mu1
         mu2 = self.mu2
@@ -351,14 +348,32 @@ class Hole(abc.ABC):
         phi_1_prime, sign_xi1 = self.phi_1_prime(z1)
         phi_2_prime, sign_xi2 = self.phi_2_prime(z2)
 
+        # Stress components
         sigma_x = 2.0 * np.real(mu1 * mu1 * phi_1_prime + mu2 * mu2 * phi_2_prime)
         sigma_y = 2.0 * np.real(phi_1_prime + phi_2_prime)
         tau_xy = -2.0 * np.real(mu1 * phi_1_prime + mu2 * phi_2_prime)
-                
+
+        # Strain components: [epsilon_x, epsilon_y, gamma_xy]^T = S @ [sigma_x, sigma_y, tau_xy]^T
+        stress_stack = np.stack([sigma_x, sigma_y, tau_xy], axis=0)
+        strain_stack = self.s @ stress_stack
+        epsilon_x = strain_stack[0]
+        epsilon_y = strain_stack[1]
+        gamma_xy = strain_stack[2]
+
+        # Displacement components (Lekhnitskii potentials; see ``displacement``)
+        disp = self.displacement(x, y)
+        u = disp[:, 0]
+        v = disp[:, 1]
+
         return {
             'sigma_x': sigma_x,
             'sigma_y': sigma_y,
             'tau_xy': tau_xy,
+            'epsilon_x': epsilon_x,
+            'epsilon_y': epsilon_y,
+            'gamma_xy': gamma_xy,
+            'u': u,
+            'v': v,
             'Real(phi_1_prime)': np.real(phi_1_prime),
             'Real(phi_2_prime)': np.real(phi_2_prime),
             'Imag(phi_1_prime)': np.imag(phi_1_prime),

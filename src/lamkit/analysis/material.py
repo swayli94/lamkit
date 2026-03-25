@@ -62,6 +62,13 @@ class Material(object):
         return self.get_property(key)
 
     @property
+    def name(self) -> str:
+        '''
+        Name of the material.
+        '''
+        return self._name
+
+    @property
     def Q(self) -> np.ndarray:
         '''
         Reduced stiffness matrix, [Q] matrix (3x3) of the Material.

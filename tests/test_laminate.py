@@ -69,7 +69,7 @@ def test_single_ply_ABD_formulas() -> None:
     # Why: directly tests the z-integration weights (1, z, z²) in A,B,D without multi-ply cancellation masking errors.
     h = 0.2
     theta = 25.0
-    lam = Laminate([theta], Ply(IM7_8551_7, thickness=h))
+    lam = Laminate([theta], [Ply(IM7_8551_7, thickness=h)])
     Qb = lam.Q_layup[0]
     A_ref = Qb * h
     D_ref = Qb * (h**3) / 12.0

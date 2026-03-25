@@ -21,6 +21,15 @@ import numpy as np
 from typing import Final, Any, Tuple
 
 
+FAILURE_MODE_NAMES = {
+    1: 'matrix_cracking',
+    2: 'matrix_splitting',
+    3: 'fibre_tension',
+    4: 'fibre_kinking',
+    5: 'matrix_interface',
+}
+
+
 class LaRC05(object):
     '''
     LaRC05 composite material failure criteria in the form of Abaqus User-defined output variables (UVARM).
@@ -52,7 +61,7 @@ class LaRC05(object):
         2) Matrix splitting;
         3) Fibre tension;
         4) Fibre kinking;
-        5) Transverse inter-bundle failure mode;
+        5) Matrix interface (transverse inter-bundle failure mode);
     
     NUVARM: int
     

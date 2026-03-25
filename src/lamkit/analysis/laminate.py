@@ -11,9 +11,10 @@ Date: 2025-10-29
 
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union, Any
 
 from lamkit.analysis.material import Ply
+from lamkit.analysis.larc05 import FAILURE_MODE_NAMES, LaRC05
 
 
 class Laminate():
@@ -52,12 +53,11 @@ class Laminate():
     Refer to https://github.com/rafaelpsilva07/composipy/issues/28.
     '''
 
-    def __init__(self, 
-                stacking: List[float]|Dict[str, List[float]],
-                plies: Ply|List[Ply]) -> None:
+    def __init__(self, stacking: List[float]|Dict[str, List[float]],
+                    plies: List[Ply]) -> None:
         
-        self.ply_material = plies
-        
+        self.stacking = stacking
+
         # Checking layup
         if not isinstance(stacking, dict): # implements angle stacking sequence
 
@@ -92,8 +92,8 @@ class Laminate():
                 KeyError('T must be a key')
             layup = []
 
-        self.stacking = stacking
         self.plies = plies
+        self.ply_material = plies[0]._material
         self.layup = layup
         self._z_position = None
         self._Q_layup = None
@@ -119,19 +119,23 @@ class Laminate():
         return NotImplemented
 
     @property
+    def n_ply(self) -> int:
+        '''
+        Number of plies in the laminate.
+        '''
+        return len(self.plies)
+
+    @property
     def z_position(self) -> List[float]:
-    
-        total_thickness = 0
-        for t in self.layup:
-            total_thickness += t[1].thickness
+        '''
+        Z coordinates of the ply surfaces in the laminate.
         
-        current_z = -total_thickness/2
-        ply_position = [current_z]
-        for t in self.layup:
-            current_z += t[1].thickness
-            ply_position.append(current_z)
-        
-        return ply_position
+        Returns
+        -------
+        z_position: List[float] (n_ply + 1,)
+            Z-position of the ply surfaces in the laminate.
+        '''
+        return np.cumsum([0] + [ply.thickness for ply in self.plies]) - self._total_thickness/2
     
     @property
     def Q_layup(self) -> List[np.ndarray]:
@@ -404,19 +408,6 @@ class Laminate():
         compliance = self._total_thickness * np.linalg.inv(self.A)
         return compliance
    
-    def get_lamination_parameters(self) -> Tuple[np.ndarray, np.ndarray]:
-        '''
-        Get the lamination parameters of the laminate.
-        
-        Returns
-        ------------------
-        xiA: np.ndarray
-            Lamination parameters of tension.
-            
-        xiD: np.ndarray
-            Lamination parameters of bending.
-        '''
-        return self.xiA, self.xiD
 
     def get_mid_plane_strains(self, N: np.ndarray) -> np.ndarray:
         '''
@@ -429,17 +420,15 @@ class Laminate():
             
         Returns
         ------------------
-        epsilon0: np.ndarray
+        epsilon0: np.ndarray (6,)
             Mid plane strains, i.e., [epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0].
         '''
         return self.ABD_inverse_matrix @ N
 
     def _ply_invariants(self) -> np.ndarray:
         '''[U1..U5] from the first ply (uniform-material laminates).'''
-        p = self.plies
-        if isinstance(p, list):
-            return p[0]('invariants')
-        return p('invariants')
+        return self.ply_material.get_property('invariants')
+
     
     def get_A_from_lamination_parameters(self) -> np.ndarray:
         '''
@@ -521,55 +510,6 @@ class Laminate():
         return np.array([[D11, D12, D13],
                         [D21, D22, D23],
                         [D31, D32, D33]])
-
-
-    def calculate_strain(self, N: np.ndarray) -> pd.DataFrame:
-        '''
-        Calculates strain ply by at laminate direction and material direction.
-
-        Parameters
-        ----------
-        N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
-            Nxx, Nyy, Nxy: in-plane forces (N/mm)
-            Mxx, Myy, Mxy: bending moments (N)
-
-        Returns
-        -------
-        strains : pd.Dataframe
-            ply by ply strains in plate direction and material direction       
-
-        Note
-        ----
-        The sequence of the DataFrame starts from the TOP OF THE LAYUP to the BOTTOM OF THE LAYUP, which is the reverse of the definition order.
-        When defining the laminate, the first element of the list corresponds to the bottom-most layer. This is especially important for non-symmetric laminates.
-        '''
-        return self.get_strain_field(self.ABD, N, 
-                                self.stacking, self.z_position)
-
-    def calculate_stress(self, N: np.ndarray) -> pd.DataFrame:
-        '''
-        Calculates stress ply by at laminate direction and material direction.
-
-        Parameters
-        ----------
-        N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
-            Nxx, Nyy, Nxy: in-plane forces (N/mm)
-            Mxx, Myy, Mxy: bending moments (N)
-
-        Returns
-        -------
-        stress : pd.Dataframe
-            ply by ply stress in plate direction and material direction       
-
-        Note
-        ----
-        The sequence of the DataFrame starts from the TOP OF THE LAYUP to the BOTTOM OF THE LAYUP, which is the reverse of the definition order.
-        When defining the laminate, the first element of the list corresponds to the bottom-most layer. This is especially important for non-symmetric laminates.
-        '''
-        return self.get_stress_field(self.ABD, N, 
-                        self.stacking, self.z_position, self.Q_layup)
 
 
     #* Static methods
@@ -658,312 +598,131 @@ class Laminate():
         e123 = Laminate.strain_xy_global_to_material(epsilon_xy, theta_deg)
         return Q_material @ e123
 
-    @staticmethod
-    def get_epsilon_plies(epsilon0: np.ndarray, n_ply: int,
-                z_positions: List[float]
-                ) -> List[Tuple[np.ndarray, np.ndarray]]:
+
+    def get_ply_level_results(self, epsilon0: np.ndarray, larc05: LaRC05) -> List[Dict[str, Any]]:
         '''
-        Calculates the strains for each ply from the mid-plane strains,
-        the strains are in the global coordinate system (x,y).
+        Get the ply-level results of the laminate.
         
         Parameters
         ----------
-        epsilon0 : np.ndarray (6,)
-            Strain vector at the mid-plane
-            
-        n_ply : int
-            Number of plies
-            
-        z_positions : List[float]
-            List of z-positions for each ply
+        epsilon0: np.ndarray (6,)
+            Mid-plane strains, i.e.,
+            `[epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0]`.
+        larc05: LaRC05
+            LaRC05 object.
             
         Returns
         -------
-        epsilon_plies: list of tuples
-            For the k-th ply, epsilon_k = (epsilon_top, epsilon_bot), 
-            where epsilon_top and epsilon_bot are np.ndarray([epsilon_x, epsilon_y, gamma_xy]).
-            The list of tuples is in the order of the plies, from top to bottom.
-            For reference refer to page 145 of Daniel equation 5.8
-            
+        results: List[Dict[str, Any]]
+            List of dictionaries, each containing the results for a ply.
+            Length is `2*n_ply`.
         '''
-        epsilon_mid = np.array([epsilon0[0], epsilon0[1], epsilon0[2]])
-        kappa_mid = np.array([epsilon0[3], epsilon0[4], epsilon0[5]])
-        
-        # Reverse z_positions so bot is negative and top is positive
-        z = z_positions[::-1]
-        
-        epsilon_plies = []
-        
-        for i in range(n_ply):
-            epsilon_plies.append(
-                (epsilon_mid + z[i] * kappa_mid,
-                 epsilon_mid + z[i+1] * kappa_mid)
+        z_pos = self.z_position
+        results = []
+        for index_ply in range(self.n_ply):
+            theta, ply_obj = self.layup[index_ply]
+            theta = float(theta)
+            z_bottom = float(z_pos[index_ply])
+            z_top = float(z_pos[index_ply + 1])
+            Q_bar = ply_obj.get_Q_bar(theta)
+            Q_mat = np.asarray(ply_obj('Q'), dtype=float)
+
+            for index_surface, z_eval in ((0, z_bottom), (1, z_top)):
+                exy = Laminate.strain_xy_at_z(epsilon0, z_eval)[0]
+                sig_xy = Laminate.stress_xy_global_from_strain(exy, Q_bar)
+                s123 = Laminate.stress_material_from_strain(exy, Q_mat, theta)
+                e123 = Laminate.strain_xy_global_to_material(exy, theta)
+
+                uvarm = larc05.get_uvarm(np.asarray(s123, dtype=float))
+                fi_block = uvarm[:5]
+                fi_max = float(np.max(fi_block))
+                mode_idx = int(np.argmax(fi_block)) + 1
+                failure_mode = FAILURE_MODE_NAMES[mode_idx]
+
+                results.append(
+                    {
+                        'index_ply': index_ply,
+                        'index_surface': index_surface,
+                        'z': z_eval,
+                        'angle': theta,
+                        'sigma_x': float(sig_xy[0]),
+                        'sigma_y': float(sig_xy[1]),
+                        'tau_xy': float(sig_xy[2]),
+                        'sigma_1': float(s123[0]),
+                        'sigma_2': float(s123[1]),
+                        'tau_12': float(s123[2]),
+                        'epsilon_x': float(exy[0]),
+                        'epsilon_y': float(exy[1]),
+                        'gamma_xy': float(exy[2]),
+                        'epsilon_1': float(e123[0]),
+                        'epsilon_2': float(e123[1]),
+                        'gamma_12': float(e123[2]),
+                        'FI_matrix_cracking': float(fi_block[0]),
+                        'FI_matrix_splitting': float(fi_block[1]),
+                        'FI_fibre_tension': float(fi_block[2]),
+                        'FI_fibre_kinking': float(fi_block[3]),
+                        'FI_matrix_interface': float(fi_block[4]),
+                        'FI_max': fi_max,
+                        'failure_mode': failure_mode,
+                    }
                 )
-        
-        return epsilon_plies
+        return results
 
-    @staticmethod
-    def get_epsilon_plies_123(stacking: List[float],
-                epsilon_plies: List[Tuple[np.ndarray, np.ndarray]]
-                ) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def evaluate_laminate(self, N: np.ndarray) -> pd.DataFrame:
         '''
-        Transforms strains from global coordinates (x,y) to material coordinates (1,2,3).
+        Evaluate the failure field of the laminate,
+        the laminate consists of plies with the same material.
         
         Parameters
         ----------
-        stacking : List[float]
-            List of ply angles in degrees
-            
-        epsilon_plies : List[Tuple[np.ndarray, np.ndarray]]
-            List of strain tuples (epsilon_top, epsilon_bot) for each ply in global coordinates
-            
-        Returns
-        -------
-        epsilon_plies_123: List[Tuple[np.ndarray, np.ndarray]]
-            For the k-th ply, epsilon_k_123 = (epsilon_top_123, epsilon_bot_123),
-            where epsilon_top_123 and epsilon_bot_123 are np.ndarray([epsilon_1, epsilon_2, gamma_12]).
-            The list of tuples is in the order of the plies, from top to bottom.
-            For reference refer to NASA pg 50
-        '''
-        epsilon_plies_123 = []
-        for theta, epsilon_k in zip(stacking, epsilon_plies):
-            epsilon_top, epsilon_bot = epsilon_k
-            epsilon_plies_123.append(
-                (
-                    Laminate.strain_xy_global_to_material(epsilon_top, theta),
-                    Laminate.strain_xy_global_to_material(epsilon_bot, theta),
-                )
-            )
-
-        return epsilon_plies_123
-
-
-    @staticmethod
-    def get_stress_plies(Q_layup: List[np.ndarray], 
-                epsilon_plies: List[Tuple[np.ndarray, np.ndarray]]
-                ) -> List[Tuple[np.ndarray, np.ndarray]]:
-        '''
-        Calculates the stresses for each ply from the strains.
-        
-        Parameters
-        ----------
-        Q_layup : List[np.ndarray]
-            List of Q matrices (stiffness matrices) for each ply
-            
-        epsilon_plies : List[Tuple[np.ndarray, np.ndarray]]
-            List of strain tuples (epsilon_top, epsilon_bot) for each ply
-            
-        Returns
-        -------
-        stress_plies: list of tuples
-            For the k-th ply, stress_k = (stress_top, stress_bot),
-            where stress_top and stress_bot are np.ndarray([sigma_x, sigma_y, tau_xy]).
-            The list of tuples is in the order of the plies, from top to bottom.
-            For reference refer to page 145 of Daniel equation 5.8
-        '''
-        stress_plies = []
-        for Q_k, epsilon_k in zip(Q_layup, epsilon_plies):
-            epsilon_top, epsilon_bot = epsilon_k
-            stress_plies.append(
-                (Q_k @ epsilon_top,
-                 Q_k @ epsilon_bot)
-            )
-        return stress_plies
-    
-    @staticmethod
-    def get_stress_plies_123(stacking: List[float], 
-                stress_plies: List[Tuple[np.ndarray, np.ndarray]]
-                ) -> List[Tuple[np.ndarray, np.ndarray]]:
-        '''
-        Transforms stresses from global coordinates (x,y) 
-        to material coordinates (1,2,3).
-        
-        Parameters
-        ----------
-        stacking : List[float]
-            List of ply angles in degrees
-            
-        stress_plies : List[Tuple[np.ndarray, np.ndarray]]
-            List of stress tuples (stress_top, stress_bot)
-            for each ply in global coordinates
-            
-        Returns
-        -------
-        stress_plies_123: List[Tuple[np.ndarray, np.ndarray]]
-            For the k-th ply, stress_k_123 = (stress_top_123, stress_bot_123),
-            where stress_top_123 and stress_bot_123 are np.ndarray([sigma_1, sigma_2, tau_12]).
-            The list of tuples is in the order of the plies, from top to bottom.
-            For reference refer to NASA pg 50
-        '''
-        stress_plies_123 = []
-        for theta, stress in zip(stacking, stress_plies):
-            stress_top, stress_bot = stress   
-            c = np.cos(theta*np.pi/180)
-            s = np.sin(theta*np.pi/180)
-            #stress_top[2] /= 2 # engineering shear strain (see nasa pg 50)
-            #stress_bot[2] /=
-
-            T = np.array([
-                [c**2, s**2, 2*c*s],
-                [s**2, c**2, -2*c*s],
-                [-c*s, c*s, c**2-s**2]
-                ])
-
-            cur_stress_top = T @ stress_top
-            cur_stress_bot = T @ stress_bot
-            #cur_stresstop[2] *= 2
-            #cur_stress_bot[2] *= 2
-            stress_plies_123.append((cur_stress_top, cur_stress_bot)) 
-        
-        return stress_plies_123
-
-
-    @staticmethod
-    def get_strain_field(ABD: np.ndarray, N: np.ndarray, 
-                stacking: List[float], 
-                z_positions: List[float]) -> pd.DataFrame:
-        '''
-        Calculates the strain field of the laminate
-        
-        Parameters
-        ----------
-        ABD: np.ndarray (6x6)
-            ABD matrix of the laminate.
-            (Material properties described in MPa and mm)
-            
+        laminate: Laminate
+            Laminate object (units: MPa, mm)
         N: np.ndarray (6,)
             Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
             Nxx, Nyy, Nxy: in-plane forces (N/mm)
             Mxx, Myy, Mxy: bending moments (N)
-            
-        stacking: List[float]
-            List of ply angles in degrees
-            
-        z_positions: List[float]
-            List of z-positions for each ply
-            
+
         Returns
         -------
-        strain_field: pd.DataFrame
-            Strain field of the laminate, ply by ply in plate direction
-            and material direction
+        field_results: pd.DataFrame
+            One row per ply face, ordered from the bottom of the layup upward (increasing z).
+            
+            Columns:
+            - index_ply: 0-based ply index, same order as `laminate.layup` (0 = bottom ply)
+            - index_surface: (0, 1) = bottom/top face of the ply
+            - z: z coordinate of the ply (bottom/top) face (mm)
+            - angle: ply angle (degree)
+            - sigma_x, sigma_y, tau_xy: global stresses (MPa)
+            - sigma_1, sigma_2, tau_12: material stresses (MPa)
+            - epsilon_x, epsilon_y, gamma_xy: global strains (unitless)
+            - epsilon_1, epsilon_2, gamma_12: material strains (unitless)
+            - FI_*: LaRC05 failure indices (unitless)
+            - FI_max: maximum LaRC05 failure index (unitless)
+            - failure_mode: failure mode (string)
+            
+            Attributes:
+            - epsilon0: mid-plane generalized strains (ndarray (6,))
+                accessed as `field_results.attrs['epsilon0']`,
+                which is `[epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0]`.
+            - global_FI_*: maximum failure indices of all plies
         '''
-        n_ply = len(stacking)
-        epsilon0 = Laminate.get_epsilon0(ABD, N)
-        epsilon_plies = Laminate.get_epsilon_plies(epsilon0, n_ply, z_positions)
-        epsilon_plies_123 = Laminate.get_epsilon_plies_123(
-                                stacking, epsilon_plies)
+        N = np.asarray(N, dtype=float).reshape(6)
+        epsilon0 = self.get_mid_plane_strains(N)
         
-        cur_ply = 1
-        data = {}
-        data['ply'] = []
-        data['position'] = []
-        data['angle'] = []       
-        data['epsilonx'] = []
-        data['epsilony'] = []
-        data['gammaxy'] = []
-        data['epsilon1'] = []
-        data['epsilon2'] = []
-        data['gamma12'] = []
-        for epsilon, epsilon123, theta in zip(epsilon_plies, epsilon_plies_123, stacking):
-            epsilon_top, epsilon_bot = epsilon
-            epsilon_top_123, epsilon_bot_123 = epsilon123
-
-            data['ply'].append(cur_ply)
-            data['ply'].append(cur_ply)
-            data['position'].append('top')
-            data['position'].append('bot')
-            data['angle'].append(theta)
-            data['angle'].append(theta)            
-            data['epsilonx'].append(epsilon_top[0]) #plate direction
-            data['epsilonx'].append(epsilon_bot[0])
-            data['epsilony'].append(epsilon_top[1])
-            data['epsilony'].append(epsilon_bot[1])
-            data['gammaxy'].append(epsilon_top[2])
-            data['gammaxy'].append(epsilon_bot[2])
-            data['epsilon1'].append(epsilon_top_123[0]) #material direction
-            data['epsilon1'].append(epsilon_bot_123[0])
-            data['epsilon2'].append(epsilon_top_123[1])
-            data['epsilon2'].append(epsilon_bot_123[1])
-            data['gamma12'].append(epsilon_top_123[2])
-            data['gamma12'].append(epsilon_bot_123[2])
-            cur_ply += 1
-        pd.set_option('display.precision', 2)
-        return pd.DataFrame(data)
-
-    @staticmethod
-    def get_stress_field(ABD: np.ndarray, N: np.ndarray, 
-                stacking: List[float], z_positions: List[float], 
-                Q_layup: List[np.ndarray]) -> pd.DataFrame:
-        '''
-        Calculates the stress field of the laminate
+        larc05 = LaRC05(nSCply=3, material=self.ply_material.name)
         
-        Parameters
-        ----------
-        ABD: np.ndarray (6x6)
-            ABD matrix of the laminate
-            (Material properties described in MPa and mm)
-            
-        N: np.ndarray (6,)
-            Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
-            Nxx, Nyy, Nxy: in-plane forces (N/mm)
-            Mxx, Myy, Mxy: bending moments (N)
-            
-        stacking: List[float]
-            List of ply angles in degrees
-            
-        z_positions: List[float]
-            List of z-positions for each ply
-            
-        Q_layup: List[np.ndarray]
-            List of Q matrices (stiffness matrices) for each ply
-            
-        Returns
-        -------
-        stress_field: pd.DataFrame
-            Stress field (MPa) of the laminate, ply by ply in plate direction
-            and material direction.
-        '''
-        n_ply = len(stacking)
-        epsilon0 = Laminate.get_epsilon0(ABD, N)
-        epsilon_plies = Laminate.get_epsilon_plies(epsilon0, n_ply, z_positions)
-        stress_plies = Laminate.get_stress_plies(Q_layup, epsilon_plies)
-        stress_plies_123 = Laminate.get_stress_plies_123(stacking, stress_plies)
-        
-        cur_ply = 1
-        data = {}
-        data['ply'] = []
-        data['position'] = []
-        data['angle'] = []
-        data['sigmax'] = []
-        data['sigmay'] = []
-        data['tauxy'] = []
-        data['sigma1'] = []
-        data['sigma2'] = []
-        data['tau12'] = []
-        for sigma, sigma_123, theta in zip(stress_plies, stress_plies_123, stacking):
-            stress_top, stress_bot = sigma
-            sigma_top_123, sigma_bot_123 = sigma_123
+        results = self.get_ply_level_results(epsilon0, larc05)
 
-            data['ply'].append(cur_ply)
-            data['ply'].append(cur_ply)
-            data['position'].append('top')
-            data['position'].append('bot')
-            data['angle'].append(theta)
-            data['angle'].append(theta)
-            data['sigmax'].append(stress_top[0]) #plate direction
-            data['sigmax'].append(stress_bot[0])
-            data['sigmay'].append(stress_top[1])
-            data['sigmay'].append(stress_bot[1])
-            data['tauxy'].append(stress_top[2])
-            data['tauxy'].append(stress_bot[2])
-            data['sigma1'].append(sigma_top_123[0]) #material direction
-            data['sigma1'].append(sigma_bot_123[0])
-            data['sigma2'].append(sigma_top_123[1])
-            data['sigma2'].append(sigma_bot_123[1])
-            data['tau12'].append(sigma_top_123[2])
-            data['tau12'].append(sigma_bot_123[2])
-            cur_ply += 1
-        pd.set_option('display.precision', 2)
-        return pd.DataFrame(data)
+        out = pd.DataFrame.from_records(results)
+        
+        out.attrs['epsilon0'] = np.asarray(epsilon0, dtype=float)
+        out.attrs['global_FI_matrix_cracking'] = np.max(out['FI_matrix_cracking'])
+        out.attrs['global_FI_matrix_splitting'] = np.max(out['FI_matrix_splitting'])
+        out.attrs['global_FI_fibre_tension'] = np.max(out['FI_fibre_tension'])
+        out.attrs['global_FI_fibre_kinking'] = np.max(out['FI_fibre_kinking'])
+        out.attrs['global_FI_matrix_interface'] = np.max(out['FI_matrix_interface'])
+        out.attrs['global_FI_max'] = np.max(out['FI_max'])
+        
+        return out
+
 
