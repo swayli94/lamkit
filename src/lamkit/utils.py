@@ -5,6 +5,7 @@ Utility functions.
 from typing import Dict, Any, Tuple, List
 import numpy as np
 from lamkit.analysis.larc05 import LaRC05
+from lamkit.analysis.material import Ply, Material
 from lamkit.analysis.laminate import Laminate
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 
@@ -171,6 +172,22 @@ def evaluate_unloaded_hole_plate(
         ply['failure_mode'] = ply['failure_mode'].reshape(out_shape)
         
     return results_by_plies, mid_plane_field
+
+
+def create_effective_laminate_for_buckling_analysis(
+    E11: float, E22: float, G12: float, nu12: float,
+    total_thickness: float,
+    ) -> Laminate:
+    '''
+    Create an effective unidirectional laminate with given properties.
+    '''
+    material = Material(name='Homogenised',
+                properties={'E11': E11, 'E22': E22, 'G12': G12, 'nu12': nu12},
+                check_larc05=False)
+    ply = Ply(material=material, thickness=total_thickness)
+    
+    laminate = Laminate(stacking=[0.0], plies=[ply])
+    return laminate
 
 
 '''

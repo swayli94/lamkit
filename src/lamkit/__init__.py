@@ -15,5 +15,5 @@ __all__ = [
     'LaRC05',
     'Hole',
     'UnloadedHole',
-    'Requirements',
+    'EngineeringRequirements',
 ]

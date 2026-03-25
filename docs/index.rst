@@ -1,7 +1,13 @@
 lamkit documentation
 ====================
 
-Toolkit for stress analysis and failure prediction of composite laminates.
+`lamkit` is a Python toolkit for composite laminate analysis, including:
+
+- classical laminate theory (CLT) stiffness and ply-level response
+- LaRC05 failure index evaluation
+- open-hole field prediction (Lekhnitskii solution)
+- laminate plate linear buckling analysis
+- layup engineering requirement checks
 
 .. toctree::
    :maxdepth: 2
@@ -9,4 +15,5 @@ Toolkit for stress analysis and failure prediction of composite laminates.
 
    installation
    quickstart
+   examples
    api

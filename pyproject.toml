@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lamkit"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Toolkit for stress analysis and failure prediction of composite laminates with holes and joints."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [
-  { name = "lamkit contributors" }
+  { name = "Runze Li" }
 ]
-keywords = ["composite", "laminate", "stress-analysis", "engineering"]
+keywords = ["composite", "laminate", "stress analysis", "engineering", "open-hole", "buckling", "bjsfm"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
@@ -45,13 +45,16 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/lamkit"
-Documentation = "https://your-org.github.io/lamkit/"
-Repository = "https://github.com/your-org/lamkit"
-Issues = "https://github.com/your-org/lamkit/issues"
+Homepage = "https://github.com/swayli94/lamkit"
+Documentation = "https://swayli94.github.io/lamkit/"
+Repository = "https://github.com/swayli94/lamkit"
+Issues = "https://github.com/swayli94/lamkit/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lamkit"]
+
+[tool.hatch.version]
+path = "src/lamkit/__init__.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

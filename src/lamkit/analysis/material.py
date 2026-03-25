@@ -17,26 +17,32 @@ class Material(object):
     properties: dict
         Properties of the material.
     '''
-    def __init__(self, name: str, properties: dict) -> None:
+    def __init__(self, name: str, properties: dict,
+                check_larc05: bool = True) -> None:
         
         self._name = name
         self._properties = properties
-        self.check_property()
+        self.check_property(check_larc05=check_larc05)
         
         self._nu21 = self.get_property('nu12') * (self.get_property('E22') / self.get_property('E11'))
         self._Q_0 = None
         self._invariants = None
 
-    def check_property(self):
+    def check_property(self, check_larc05: bool = True):
         '''
         Check whether the properties dictionary contains all the required keys.
         '''
-        required_keys = ['E11', 'E22', 'nu12', 'G12', 
-                         'Xt', 'Xc', 'Yt', 'Yc', 'Sl',
-                         'a0', 'nL', 'nT', 'ILSS', 'Zt', 
-                         'G1cMat', 'G2cMat', 'G1cFibT', 'G1cFibK', 'GAlphaM']
-        if not all(key in self._properties for key in required_keys):
-            raise ValueError(f'Properties dictionary must contain all the required keys: {required_keys}')
+        required_keys_elasticity = ['E11', 'E22', 'nu12', 'G12']
+        if not all(key in self._properties for key in required_keys_elasticity):
+            raise ValueError(f'Properties dictionary for [Elasticity] must contain all the required keys: {required_keys_elasticity}')
+        
+        # Check LaRC05 failure criteria properties if required.
+        if check_larc05:
+            required_keys_lrac05 = ['Xt', 'Xc', 'Yt', 'Yc', 'Sl',
+                                'a0', 'nL', 'nT', 'ILSS', 'Zt', 
+                                'G1cMat', 'G2cMat', 'G1cFibT', 'G1cFibK', 'GAlphaM']
+            if not all(key in self._properties for key in required_keys_lrac05):
+                raise ValueError(f'Properties dictionary for [LaRC05 Failure Criteria] must contain all the required keys: {required_keys_lrac05}')
 
     def get_property(self, key: str) -> float | np.ndarray:
         '''

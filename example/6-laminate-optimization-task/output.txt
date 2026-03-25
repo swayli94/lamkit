@@ -7,7 +7,7 @@ Objective (min total thickness): 2.000
 Computed responses:
   max|u_x|  [mm] = 0.032456
   FI_max    [-]  = 0.249460
-  lambda_cr [-]  = 2.072407
+  lambda_cr [-]  = 1.786607
 
 Constraint limits:
   max|u_x| <= 0.050000 mm
@@ -17,8 +17,8 @@ Constraint limits:
 Constraint residuals g (feasible if g <= 0):
   g_disp   = -0.017544
   g_fi     = -0.550540
-  g_buckle = -0.572407
+  g_buckle = -0.286607
 
 Layup feasible:   True
 Overall feasible: True
-Time taken: 45.67 seconds
+Time taken: 44.32 seconds

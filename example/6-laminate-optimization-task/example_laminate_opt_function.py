@@ -34,8 +34,10 @@ if src_root not in sys.path:
 from lamkit.analysis.buckling import BucklingAnalysis
 from lamkit.analysis.laminate import Laminate
 from lamkit.analysis.material import IM7_8551_7, Material, Ply
+from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 from lamkit.lekhnitskii.utils import generate_meshgrid
-from lamkit.utils import evaluate_unloaded_hole_plate
+from lamkit.lekhnitskii.homogenisation import compute_homogenised_properties
+from lamkit.utils import evaluate_unloaded_hole_plate, create_effective_laminate_for_buckling_analysis
 from lamkit.requirements import EngineeringRequirements
 
 
@@ -64,6 +66,7 @@ def evaluate_laminate_design(
     """
     t0 = time.time()
     
+    # Engineering requirements for layup
     requirements = EngineeringRequirements(strong_requirement=False)
     requirements._print_violations = True
     is_layup_feasible = requirements(layup)
@@ -81,6 +84,7 @@ def evaluate_laminate_design(
     sigma_yy_inf = 0.0
     tau_xy_inf = 0.0
 
+    # Unloaded hole solution
     mesh = generate_meshgrid(
         hole_radius=hole_radius_mm,
         plate_radius=0.5 * min(w_mm, h_mm),
@@ -104,8 +108,27 @@ def evaluate_laminate_design(
     max_abs_u = float(np.max(np.abs(mid_plane_field["u"])))
     fi_max = float(max(np.max(ply_result["FI_max"]) for ply_result in results_by_plies))
 
+    # Effective laminate for buckling analysis
+    properties_eff = compute_homogenised_properties(HoleType=UnloadedHole,
+        L=w_mm,
+        H=h_mm,
+        plate_thickness=total_thickness,
+        hole_radius=hole_radius_mm,
+        compliance_matrix=laminate.in_plane_compliance_matrix,
+        n_points_boundary=n_points,
+    )
+    
+    laminate_eff = create_effective_laminate_for_buckling_analysis(
+        E11=properties_eff['E11_eff'],
+        E22=properties_eff['E22_eff'],
+        G12=properties_eff['G12_eff'],
+        nu12=properties_eff['nu12_eff'],
+        total_thickness=total_thickness,
+    )
+
+    # Buckling analysis of the effective laminate
     buckling = BucklingAnalysis(
-        laminate=laminate,
+        laminate=laminate_eff,
         a=w_mm,
         b=h_mm,
         constraints="PINNED",
@@ -128,6 +151,8 @@ def evaluate_laminate_design(
     return {
         "layup_deg": layup,
         "objective": objective,
+        "total_thickness": total_thickness,
+        "n_ply": n_ply,
         "max_abs_u_mm": max_abs_u,
         "FI_max": fi_max,
         "lambda_cr": lambda_cr,
