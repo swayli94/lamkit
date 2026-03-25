@@ -9,7 +9,7 @@ from lamkit.analysis.laminate import Laminate
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 
 
-def midplane_stresses_unloaded_hole(
+def midplane_stresses_unloaded_hole_plate(
         sigma_xx_inf: float,
         sigma_yy_inf: float,
         tau_xy_inf: float,
@@ -22,7 +22,7 @@ def midplane_stresses_unloaded_hole(
     Mid-plane stress field (sigma_x, sigma_y, tau_xy) for a homogeneous plate
     with given plane-stress compliance and Lekhnitskii unloaded-hole solution.
 
-    For laminate CLT + ply-level LaRC05 fields, use ``evaluate_unloaded_hole_stress_field``.
+    For laminate CLT + ply-level LaRC05 fields, use ``evaluate_unloaded_hole_plate``.
     '''
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -41,7 +41,8 @@ def midplane_stresses_unloaded_hole(
     return sigma_x, sigma_y, tau_xy
 
 
-def evaluate_unloaded_hole_stress_field(laminate: Laminate, hole_radius: float,
+def evaluate_unloaded_hole_plate(
+        laminate: Laminate, hole_radius: float,
         sigma_xx_inf: float, sigma_yy_inf: float, tau_xy_inf: float,
         x: np.ndarray, y: np.ndarray,
         ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -172,3 +173,18 @@ def evaluate_unloaded_hole_stress_field(laminate: Laminate, hole_radius: float,
     return results_by_plies, mid_plane_field
 
 
+'''
+Provide access to the homogenisation functions.
+'''
+from lamkit.lekhnitskii.homogenisation import (
+    compute_permutation_invariants,
+    compute_effective_strains as compute_effective_strains_hole_plate,
+    compute_homogenised_properties as compute_homogenised_properties_hole_plate,
+)
+
+__all__ = [
+    'evaluate_unloaded_hole_plate',
+    'compute_permutation_invariants',
+    'compute_effective_strains_hole_plate',
+    'compute_homogenised_properties_hole_plate',
+]

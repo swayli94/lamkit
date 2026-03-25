@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 from lamkit.lekhnitskii.utils import generate_meshgrid
-from lamkit.utils import midplane_stresses_unloaded_hole
+from lamkit.utils import midplane_stresses_unloaded_hole_plate
 
 
 DPI = 100
@@ -51,7 +51,7 @@ def plot_stress_field(
     X = meshgrid['X']
     Y = meshgrid['Y']
     
-    sigma_xx, sigma_yy, tau_xy = midplane_stresses_unloaded_hole(
+    sigma_xx, sigma_yy, tau_xy = midplane_stresses_unloaded_hole_plate(
         sigma_xx_inf, sigma_yy_inf, tau_xy_inf, hole_radius, compliance_matrix, X, Y)
         
     fig, ax = plt.subplots(1, 3, figsize=(18, 5))

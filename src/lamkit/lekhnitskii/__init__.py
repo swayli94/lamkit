@@ -20,8 +20,3 @@ References
 .. [5] Waszczak, J.P. and Cruse T.A. (1973) *A synthesis procedure for mechanically
    fastened joints in advanced composite materials* (Vol. II). AFML-TR-73-145.
 '''
-
-from .unloaded_hole import UnloadedHole
-from .loaded_hole import LoadedHole
-
-__all__ = ['UnloadedHole', 'LoadedHole']

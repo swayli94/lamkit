@@ -5,7 +5,7 @@ Unloaded hole in an infinite anisotropic homogeneous plate
 import numpy as np
 from typing import Tuple, Dict
 
-from .hole import Hole
+from lamkit.lekhnitskii.hole import Hole
 
 
 class UnloadedHole(Hole):

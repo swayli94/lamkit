@@ -153,8 +153,7 @@ def print_comparison(results: Dict[str, Any]) -> None:
 def main() -> None:
     
     # Example laminate (quasi-isotropic).
-    layup = [45, -45, 0, 90, 90, 0, -45, 45]
-    layup = [0, 30, -25, 90]
+    layup = [45, -45, 0, -45, 45, 0, 0, 90, 90, 0, 0, 45, -45, 0, -45, 45]
     ply_thickness_mm = 0.125
 
     ply = Ply(material=IM7_8551_7, thickness=ply_thickness_mm)

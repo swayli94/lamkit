@@ -5,8 +5,8 @@ Homogenisation of a plate with a circular hole.
 
 import numpy as np
 from typing import Dict, Type, Any
-from .hole import Hole
-from .unloaded_hole import UnloadedHole
+from lamkit.lekhnitskii.hole import Hole
+from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 
 
 def compute_effective_strains(solution: Hole,

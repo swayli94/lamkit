@@ -5,8 +5,8 @@ Loaded hole in an infinite anisotropic homogeneous plate
 import numpy as np
 from typing import Callable, Tuple
 
-from .hole import Hole
-from .utils import rotate_material_matrix, rotate_stress
+from lamkit.lekhnitskii.hole import Hole
+from lamkit.lekhnitskii.utils import rotate_material_matrix, rotate_stress
 
 
 def _remove_bad_displacements(displacement_func: 

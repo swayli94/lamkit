@@ -1,0 +1,24 @@
+Laminate optimization function example
+====================================
+Layup (deg): [45, -45, 0, -45, 45, 0, 0, 90, 90, 0, 0, 45, -45, 0, -45, 45]
+Number of plies: 16
+Objective (min total thickness): 2.000
+
+Computed responses:
+  max|u_x|  [mm] = 0.032456
+  FI_max    [-]  = 0.249460
+  lambda_cr [-]  = 2.072407
+
+Constraint limits:
+  max|u_x| <= 0.050000 mm
+  FI_max   <= 0.800000
+  lambda   >= 1.500000
+
+Constraint residuals g (feasible if g <= 0):
+  g_disp   = -0.017544
+  g_fi     = -0.550540
+  g_buckle = -0.572407
+
+Layup feasible:   True
+Overall feasible: True
+Time taken: 45.67 seconds

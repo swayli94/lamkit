@@ -16,7 +16,7 @@ from lamkit.lekhnitskii.utils import (
     rotate_strain,
     rotate_stress,
 )
-from lamkit.utils import evaluate_unloaded_hole_stress_field
+from lamkit.utils import evaluate_unloaded_hole_plate
 
 
 def _isotropic_compliance(E: float, nu: float) -> np.ndarray:
@@ -163,7 +163,7 @@ def test_evaluate_unloaded_hole_stress_field_shapes_and_types() -> None:
     x = np.array([2.0], dtype=float)  # keep away from hole boundary (hole_radius=1.0)
     y = np.array([0.0], dtype=float)
 
-    results_by_plies, mid_plane_field = evaluate_unloaded_hole_stress_field(
+    results_by_plies, mid_plane_field = evaluate_unloaded_hole_plate(
         laminate=lam,
         hole_radius=1.0,
         sigma_xx_inf=100.0,

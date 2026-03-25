@@ -20,7 +20,7 @@ from matplotlib.colors import ListedColormap
 from lamkit.analysis.material import IM7_8551_7, Ply
 from lamkit.analysis.laminate import Laminate
 from lamkit.lekhnitskii.utils import generate_meshgrid
-from lamkit.utils import evaluate_unloaded_hole_stress_field
+from lamkit.utils import evaluate_unloaded_hole_plate
 
 DPI = 100
 
@@ -52,7 +52,7 @@ def evaluate_laminate_open_hole_field(
     Predict stress field around an open hole (no plotting).
 
     Returns the mesh + equivalent mid-plane stresses, ``z_edges`` for through-thickness
-    plots, and ply-surface results from ``evaluate_unloaded_hole_stress_field`` (second
+    plots, and ply-surface results from ``evaluate_unloaded_hole_plate`` (second
     value used to envelope LaRC05 FIs).
     """
     ply = Ply(material=IM7_8551_7, thickness=ply_thickness)
@@ -69,7 +69,7 @@ def evaluate_laminate_open_hole_field(
     X = mesh["X"]
     Y = mesh["Y"]
 
-    results_by_plies, mid_plane_field = evaluate_unloaded_hole_stress_field(
+    results_by_plies, mid_plane_field = evaluate_unloaded_hole_plate(
         laminate,
         hole_radius,
         sigma_xx_inf,
@@ -104,7 +104,7 @@ def extract_hole_boundary_field(
 
     ``generate_meshgrid`` uses radial index 0 at ``r = hole_radius``; takes that ring
     from each entry in ``results_by_plies`` (ply bottom / top surfaces from
-    ``evaluate_unloaded_hole_stress_field``). Equivalent mid-plane global stresses on the
+    ``evaluate_unloaded_hole_plate``). Equivalent mid-plane global stresses on the
     same ring remain in ``sigma_*_hole`` for consistency with the domain field.
     """
     x_mesh = field["X"][0, :]
@@ -177,7 +177,7 @@ def envelope_fi_of_all_plies(
         results_by_plies: List[Dict[str, Any]]) -> Dict[str, np.ndarray]:
     """
     Through-thickness envelope of LaRC05 fields
-    from `evaluate_unloaded_hole_stress_field`.
+    from `evaluate_unloaded_hole_plate`.
     
     Returns:
     --------
