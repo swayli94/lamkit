@@ -39,6 +39,43 @@ class UnloadedHole(Hole):
         
         self.C1, self.C2 = self.calculate_potential_function_coefficients()
         
+    def displacement(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Displacement field for the unloaded hole.
+
+        Notes
+        -----
+        The base `Hole.displacement()` returns the displacement due to the
+        *hole perturbation* only. For an unloaded hole we also need to add the
+        far-field *linear* displacement consistent with the imposed remote
+        stresses:
+            epsilon_inf = S @ sigma_inf
+            u_far = epsilon_x_inf * x + (gamma_inf/2) * y
+            v_far = epsilon_y_inf * y + (gamma_inf/2) * x
+
+        This is required so that strain obtained from displacement gradients
+        matches the strain computed in `calculate_field_results()`.
+        """
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+
+        # Hole perturbation (decays with distance)
+        disp = super().displacement(x, y)
+
+        # Far-field linear displacement from the imposed remote stresses.
+        sigma_inf = np.array(
+            [self.sigma_xx_inf, self.sigma_yy_inf, self.tau_xy_inf],
+            dtype=float,
+        )
+        eps_inf = self.s @ sigma_inf  # [epsilon_x, epsilon_y, gamma_xy] (engineering gamma)
+        eps_x_inf, eps_y_inf, gamma_inf = eps_inf.tolist()
+
+        u_far = eps_x_inf * x + 0.5 * gamma_inf * y
+        v_far = eps_y_inf * y + 0.5 * gamma_inf * x
+
+        disp_far = np.stack([u_far, v_far], axis=1)
+        return disp + disp_far
+
     def calculate_potential_function_coefficients(self) -> Tuple[complex, complex]:
         '''
         Calculates the coefficients of the potential functions, C1 and C2.

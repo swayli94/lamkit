@@ -71,7 +71,7 @@ class Laminate():
             xiB = None
             xiD = None
             total_thickness = sum([ply.thickness for ply in plies])
-            layup = list(zip(stacking, plies))
+            layup = list(zip(stacking, plies)) # [(angle, ply), ...]
         
         else:
             try:
@@ -107,6 +107,7 @@ class Laminate():
         self._xiB = xiB
         self._xiD = xiD
         self._total_thickness = total_thickness
+        self._S = None
 
     def __repr__(self) -> str:
         representation = f'Laminate\n'
@@ -124,6 +125,13 @@ class Laminate():
         Number of plies in the laminate.
         '''
         return len(self.plies)
+
+    @property
+    def stacking_sequence(self) -> List[float]:
+        '''
+        Stacking sequence (ply angle, degrees) of the laminate.
+        '''
+        return [angle for angle, _ in self.layup]
 
     @property
     def z_position(self) -> List[float]:
@@ -404,9 +412,10 @@ class Laminate():
         matches that convention for an equivalent homogeneous laminate.
         If B is non-zero, an equivalent S_eq is only an approximation.
         '''
-        # S_eq = (A/h)^(-1) for epsilon0 = S_eq @ (N/h); see docstring.
-        compliance = self._total_thickness * np.linalg.inv(self.A)
-        return compliance
+        if self._S is None:
+            # S_eq = (A/h)^(-1) for epsilon0 = S_eq @ (N/h); see docstring.
+            self._S = self._total_thickness * np.linalg.inv(self.A)
+        return self._S
    
 
     def get_mid_plane_strains(self, N: np.ndarray) -> np.ndarray:
@@ -511,6 +520,26 @@ class Laminate():
                         [D21, D22, D23],
                         [D31, D32, D33]])
 
+
+    def get_effective_properties(self) -> Dict[str, float]:
+        '''
+        Get the effective properties of the laminate.
+        '''
+        S_eff = self.in_plane_compliance_matrix
+        E11_eff = 1/S_eff[0, 0]
+        E22_eff = 1/S_eff[1, 1]
+        G12_eff = 1/S_eff[2, 2]
+        nu12_eff = -S_eff[0, 1] / S_eff[0, 0]
+        nu21_eff = -S_eff[1, 0] / S_eff[1, 1]
+        
+        return {
+            'E11_eff': E11_eff,
+            'E22_eff': E22_eff,
+            'G12_eff': G12_eff,
+            'nu12_eff': nu12_eff,
+            'nu21_eff': nu21_eff,
+        }
+    
 
     #* Static methods
     
