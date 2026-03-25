@@ -26,7 +26,7 @@ def midplane_stresses_unloaded_hole(
     '''
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
-    shape = x.shape
+    out_shape = x.shape
     x_flat = np.atleast_1d(x).ravel()
     y_flat = np.atleast_1d(y).ravel()
     solution = UnloadedHole(
@@ -34,10 +34,10 @@ def midplane_stresses_unloaded_hole(
         radius=hole_radius,
         compliance_matrix=compliance_matrix,
     )
-    field = solution.calculate_field_results(x_flat, y_flat)
-    sigma_x = field['sigma_x'].reshape(shape)
-    sigma_y = field['sigma_y'].reshape(shape)
-    tau_xy = field['tau_xy'].reshape(shape)
+    field = solution.calculate_field_results(x_flat, y_flat, out_shape)
+    sigma_x = field['sigma_x']
+    sigma_y = field['sigma_y']
+    tau_xy = field['tau_xy']
     return sigma_x, sigma_y, tau_xy
 
 
@@ -91,11 +91,11 @@ def evaluate_unloaded_hole_stress_field(laminate: Laminate, hole_radius: float,
                             radius=hole_radius,
                             compliance_matrix=laminate.in_plane_compliance_matrix)
     
-    mid_plane_field = solution.calculate_field_results(x_flat, y_flat)
+    mid_plane_field = solution.calculate_field_results(x_flat, y_flat, out_shape)
     
-    epsilon_x = mid_plane_field['epsilon_x'] # (n_points,)
-    epsilon_y = mid_plane_field['epsilon_y'] # (n_points,)
-    gamma_xy = mid_plane_field['gamma_xy'] # (n_points,)
+    epsilon_x = mid_plane_field['epsilon_x'].ravel() # (n_points,)
+    epsilon_y = mid_plane_field['epsilon_y'].ravel() # (n_points,)
+    gamma_xy = mid_plane_field['gamma_xy'].ravel() # (n_points,)
     zeros_kappa = np.zeros_like(x_flat) # (n_points,)
     epsilon0 = np.stack(
         [
@@ -163,11 +163,12 @@ def evaluate_unloaded_hole_stress_field(laminate: Laminate, hole_radius: float,
                     _result_ply[key][i] = _result_point[key]
                 _result_ply['failure_mode'][i] = _result_point['failure_mode']
 
+    # Reshape the results to the original shape
     for ply in results_by_plies:
         for key in NUMERIC_KEYS:
             ply[key] = ply[key].reshape(out_shape)
         ply['failure_mode'] = ply['failure_mode'].reshape(out_shape)
-                    
+        
     return results_by_plies, mid_plane_field
 
 

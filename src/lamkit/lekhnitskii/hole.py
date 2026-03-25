@@ -311,7 +311,8 @@ class Hole(abc.ABC):
     # ------------------------------
     # For detailed analysis
     # ------------------------------
-    def calculate_field_results(self, x: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
+    def calculate_field_results(self, x: np.ndarray, y: np.ndarray, 
+                                out_shape: Tuple[int, int] = None) -> Dict[str, np.ndarray]:
         '''
         Calculates stress, strain, and displacement at (x, y) points in the plate.
 
@@ -319,7 +320,9 @@ class Hole(abc.ABC):
         ----------
         x, y : np.ndarray of shape (n,)
             x and y locations in the cartesian coordinate system
-            
+        out_shape: Tuple[int, int]
+            shape of the output array
+        
         Returns
         -------
         field: Dict[str, np.ndarray]
@@ -364,6 +367,20 @@ class Hole(abc.ABC):
         disp = self.displacement(x, y)
         u = disp[:, 0]
         v = disp[:, 1]
+        
+        if out_shape is not None:
+            sigma_x = sigma_x.reshape(out_shape)
+            sigma_y = sigma_y.reshape(out_shape)
+            tau_xy = tau_xy.reshape(out_shape)
+            epsilon_x = epsilon_x.reshape(out_shape)
+            epsilon_y = epsilon_y.reshape(out_shape)
+            gamma_xy = gamma_xy.reshape(out_shape)
+            u = u.reshape(out_shape)
+            v = v.reshape(out_shape)
+            phi_1_prime = phi_1_prime.reshape(out_shape)
+            phi_2_prime = phi_2_prime.reshape(out_shape)
+            sign_xi1 = sign_xi1.reshape(out_shape)
+            sign_xi2 = sign_xi2.reshape(out_shape)
 
         return {
             'sigma_x': sigma_x,

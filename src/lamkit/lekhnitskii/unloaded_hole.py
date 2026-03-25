@@ -176,7 +176,8 @@ class UnloadedHole(Hole):
         
         return _stress
 
-    def calculate_field_results(self, x: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
+    def calculate_field_results(self, x: np.ndarray, y: np.ndarray, 
+                                out_shape: Tuple[int, int] = None) -> Dict[str, np.ndarray]:
         '''
         Calculates the stress at (x, y) points in the plate
         
@@ -184,25 +185,37 @@ class UnloadedHole(Hole):
         ----------
         x, y : np.ndarray of shape (n,)
             x and y locations in the cartesian coordinate system
-            
+        out_shape: Tuple[int, int]
+            shape of the output array
         Returns
         -------
         field: Dict[str, np.ndarray]
             Same keys as `Hole.calculate_field_results`; stresses include the
             remote field, and strains are `S @ sigma` for that total stress.
         '''
-        field = super().calculate_field_results(x, y)
+        field = super().calculate_field_results(x, y, out_shape)
 
         field['sigma_x'] += self.sigma_xx_inf
         field['sigma_y'] += self.sigma_yy_inf
         field['tau_xy'] += self.tau_xy_inf
 
         stress_stack = np.stack(
-            [field['sigma_x'], field['sigma_y'], field['tau_xy']], axis=0)
+            [
+                np.ravel(field['sigma_x']),
+                np.ravel(field['sigma_y']),
+                np.ravel(field['tau_xy']),
+            ],
+            axis=0,
+        )
         strain_stack = self.s @ stress_stack
-        field['epsilon_x'] = strain_stack[0]
-        field['epsilon_y'] = strain_stack[1]
-        field['gamma_xy'] = strain_stack[2]
+        if out_shape is not None:
+            field['epsilon_x'] = strain_stack[0].reshape(out_shape)
+            field['epsilon_y'] = strain_stack[1].reshape(out_shape)
+            field['gamma_xy'] = strain_stack[2].reshape(out_shape)
+        else:
+            field['epsilon_x'] = strain_stack[0]
+            field['epsilon_y'] = strain_stack[1]
+            field['gamma_xy'] = strain_stack[2]
 
         return field
 
