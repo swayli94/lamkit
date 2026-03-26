@@ -8,6 +8,7 @@
 - Open-hole plate's effective (homogenisation) properties
 - Linear buckling analysis of laminates
 - Objective/constraint evaluation for laminate optimization tasks
+- Layup engineering-requirement checks and feasibility rating against a layup attribute database
 
 ## Installation
 
@@ -15,6 +16,7 @@
 
 - Python `>=3.9`
 - Core dependencies: `numpy`, `pandas`, `matplotlib`
+- Optional: `scipy` (linear buckling and layup feasibility rating)
 
 ### Install from PyPI
 
@@ -75,6 +77,10 @@ The `example/` directory contains runnable scripts:
 6. **Optimization objective/constraint evaluation**  
    `example/6-laminate-optimization-task/example_laminate_opt_function.py`  
    Demonstrates combined displacement, failure, and buckling constraint evaluation for design tasks.
+
+7. **Layup feasibility rating**  
+   `example/7-layup-feasibility/example_layup_feasibility.py`  
+   Scores a candidate stacking (ply counts, bending lamination parameters) by distance to the nearest layups in a CSV database.
 
 ## Common Development Commands
 

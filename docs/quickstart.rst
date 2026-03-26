@@ -5,7 +5,16 @@ The package exports the main classes directly from ``lamkit``:
 
 .. code-block:: python
 
-   from lamkit import Material, Ply, Laminate, LaRC05, Hole, UnloadedHole
+   from lamkit import (
+       Material,
+       Ply,
+       Laminate,
+       LaRC05,
+       Hole,
+       UnloadedHole,
+       EngineeringRequirements,
+       LayupFeasibilityRating,
+   )
 
 Build a simple laminate and evaluate ply-level response:
 
@@ -53,3 +62,23 @@ Evaluate an open-hole plate for the same laminate:
 
    print("mid-plane sigma_x max =", np.max(mid_plane["sigma_x"]))
    print("ply-surface FI_max max =", max(np.max(p["FI_max"]) for p in results_by_plies))
+
+Layup guidelines and database-based feasibility use ``EngineeringRequirements`` and
+``LayupFeasibilityRating``. The rating step builds a KD-tree and requires SciPy_.
+
+.. code-block:: python
+
+   from lamkit import EngineeringRequirements, LayupFeasibilityRating
+   from lamkit.layup.feasibility import DEFAULT_DATASET_PATH
+
+   stacking = [45.0, -45.0, 0.0, 90.0, 90.0, 0.0, -45.0, 45.0]
+   eng_req = EngineeringRequirements()
+   print("passes guidelines:", eng_req(stacking))
+
+   rating = LayupFeasibilityRating(path_to_layup_database=DEFAULT_DATASET_PATH)
+   out = rating.calculate_distance(
+       n_ply=8, n_0=2, n_90=2, xiD1=0.0, xiD2=0.0, xiD3=0.0,
+   )
+   print("nearest distance:", out["distance"], "layup_id:", out["layup_id"])
+
+.. _SciPy: https://scipy.org/

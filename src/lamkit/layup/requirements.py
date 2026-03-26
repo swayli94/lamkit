@@ -25,7 +25,7 @@ The stacking sequence is determined by the composite guidelines
 
 - Avoid LSS that create high inter-laminar tension stresses at free edges.
     - Minimize the Poisson's ratio mismatch between adjacent laminates that are co-cured or bonded. 
-    - Limit angle jumps between adjacent plies: keep |Δθ| ≤ 45° where possible; avoid abrupt 0°↔90° adjacency.
+    - Limit angle jumps between adjacent plies: keep adjacent ply angle change ≤ 45° where possible; avoid abrupt 0°↔90° adjacency.
     - Maintain sublaminate symmetry near surfaces: ensure the outer few plies themselves form a symmetric, balanced mini-stack.
 
 - Laminate in-plane properties are dictated by the percentage of layers with different orientation angles

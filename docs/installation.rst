@@ -24,7 +24,7 @@ Install from PyPI
 Optional runtime dependencies
 -----------------------------
 
-- Buckling analysis uses SciPy:
+- Linear buckling and layup feasibility rating (``cKDTree``) use SciPy:
 
   .. code-block:: bash
 
@@ -33,7 +33,20 @@ Optional runtime dependencies
 Build documentation locally
 ---------------------------
 
+Autodoc imports ``lamkit`` and its dependencies (NumPy, pandas, Matplotlib, SciPy, etc.).
+Install the package in the **same environment** you use for Sphinx, for example:
+
+.. code-block:: bash
+
+   pip install -e ".[docs]"
+
+Then:
+
 .. code-block:: bash
 
    cd docs
    sphinx-build -b html . _build/html
+
+Alternatively, from the repo root: ``pip install -r docs/requirements.txt`` (includes the scientific stack plus Sphinx).
+
+If your editor reports ``No module named 'numpy'`` while analyzing ``docs/conf.py``, point the workspace Python interpreter at the venv where you ran the install above.

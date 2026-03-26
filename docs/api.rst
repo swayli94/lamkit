@@ -55,15 +55,23 @@ Lekhnitskii
    :undoc-members:
    :show-inheritance:
 
-Utilities and requirements
---------------------------
+Layup utilities
+---------------
 
-.. automodule:: lamkit.utils
+.. automodule:: lamkit.layup.requirements
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: lamkit.requirements
+.. automodule:: lamkit.layup.feasibility
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Utilities
+---------
+
+.. automodule:: lamkit.utils
    :members:
    :undoc-members:
    :show-inheritance:

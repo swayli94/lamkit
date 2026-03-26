@@ -8,6 +8,7 @@ lamkit documentation
 - open-hole field prediction (Lekhnitskii solution)
 - laminate plate linear buckling analysis
 - layup engineering requirement checks
+- layup feasibility rating (nearest-neighbour distance in a layup attribute database)
 
 .. toctree::
    :maxdepth: 2

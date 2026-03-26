@@ -38,3 +38,9 @@ The repository contains runnable examples in the ``example/`` directory.
 
 - Path: ``example/6-laminate-optimization-task/example_laminate_opt_function.py``
 - Demonstrates combined displacement/failure/buckling constraint evaluation.
+
+7. Layup feasibility rating
+---------------------------
+
+- Path: ``example/7-layup-feasibility/example_layup_feasibility.py``
+- Loads the layup attribute database (CSV under ``data/``), weights feature dimensions, and reports distance to the nearest stored layups for a candidate stacking descriptor.
