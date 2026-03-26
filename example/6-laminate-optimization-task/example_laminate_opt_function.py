@@ -38,7 +38,7 @@ from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 from lamkit.lekhnitskii.utils import generate_meshgrid
 from lamkit.lekhnitskii.homogenisation import compute_homogenised_properties
 from lamkit.utils import evaluate_unloaded_hole_plate, create_effective_laminate_for_buckling_analysis
-from lamkit.requirements import EngineeringRequirements
+from lamkit.layup.requirements import EngineeringRequirements
 
 
 def evaluate_laminate_design(

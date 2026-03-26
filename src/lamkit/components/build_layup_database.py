@@ -34,7 +34,7 @@ from typing import Dict, Iterable, Iterator, List
 import numpy as np
 import pandas as pd
 
-from lamkit.requirements import EngineeringRequirements
+from lamkit.layup.requirements import EngineeringRequirements
 from lamkit.analysis.laminate import Laminate
 
 

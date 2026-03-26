@@ -6,7 +6,8 @@ from .analysis.laminate import Laminate
 from .analysis.larc05 import LaRC05
 from lamkit.lekhnitskii.hole import Hole
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
-from lamkit.requirements import EngineeringRequirements
+from lamkit.layup.requirements import EngineeringRequirements
+from lamkit.layup.feasibility import LayupFeasibilityRating
 
 __all__ = [
     'Material',
@@ -16,4 +17,5 @@ __all__ = [
     'Hole',
     'UnloadedHole',
     'EngineeringRequirements',
+    'LayupFeasibilityRating',
 ]

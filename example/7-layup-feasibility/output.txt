@@ -1,0 +1,12 @@
+The closest layup is #1623 with a distance of 2.890
+
+The stacking sequence:   [0.0, 0.0, 45.0, 90.0, 45.0, 0.0, 0.0, -45.0, 90.0, -45.0, -45.0, 90.0, -45.0, 0.0, 0.0, 45.0, 90.0, 45.0, 0.0, 0.0]
+
+n_0:   actually  8, expected  6
+n_90:  actually  4, expected  4
+n_ply: actually 20, expected 20
+xiD1:  actually 0.452, expected 0.500
+xiD2:  actually 0.240, expected 0.500
+xiD3:  actually 0.440, expected 0.500
+
+The distance calculation took 0.00 seconds
