@@ -208,7 +208,7 @@ def build_or_extend_layup_database(
 
     source_path = old_database_path if old_database_path is not None else dataset_path
     current_df = load_layup_database(source_path)
-    existing_n_ply = set(current_df["n_ply"].astype(int).unique()) if not current_df.empty else set()
+    existing_n_ply = {int(n) for n in current_df["n_ply"].unique()} if not current_df.empty else set()
     missing_n_ply = [n for n in n_ply_values if n not in existing_n_ply]
     
     if not current_df.empty:

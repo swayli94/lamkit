@@ -4,13 +4,13 @@ Homogenisation of a plate with a circular hole.
 
 
 import numpy as np
-from typing import Dict, Type, Any
+from typing import Dict, Type, Any, List
 from lamkit.lekhnitskii.hole import Hole
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 
 
 def compute_effective_strains(solution: Hole,
-                L: float, H: float, n_points_boundary: int = 301) -> np.ndarray:
+                L: float, H: float, n_points_boundary: int = 301) -> Dict[str, np.ndarray]:
     """
     Compute effective strains from boundary displacements.
     The plate is treated as a square domain:
@@ -30,8 +30,14 @@ def compute_effective_strains(solution: Hole,
 
     Returns
     -------
-    effective_strains: np.ndarray, shape (3,)
-        [epsilon_x, epsilon_y, gamma_xy] (engineering gamma_xy).
+    results: Dict[str, np.ndarray]
+        The results of the effective strains.
+        - 'effective_strains': [epsilon_x, epsilon_y, gamma_xy] (engineering gamma_xy).
+        - 'displacement_right': np.ndarray, shape (n_points_boundary, 2)
+        - 'displacement_left': np.ndarray, shape (n_points_boundary, 2)
+        - 'displacement_top': np.ndarray, shape (n_points_boundary, 2)
+        - 'displacement_bottom': np.ndarray, shape (n_points_boundary, 2)
+        
     """
     if n_points_boundary < 3:
         raise ValueError("n_points_boundary must be >= 3")
@@ -74,21 +80,23 @@ def compute_effective_strains(solution: Hole,
 
     # --- gamma_xy_bar = (1/(L*H)) [ ∫ (u(x,H)-u(x,0)) dx + ∫ (v(L,y)-v(0,y)) dy ] ---
     # Our coordinates: H => y_top, 0 => y_bottom; L => x_right, 0 => x_left.
-    disp_u_t = np.asarray(solution.displacement(x, y_t), dtype=float)
-    disp_u_b = np.asarray(solution.displacement(x, y_b), dtype=float)
-    u_t = disp_u_t[:, 0]
-    u_b = disp_u_b[:, 0]
+    u_t = disp_t[:, 0]
+    u_b = disp_b[:, 0]
     term1 = float(np.trapz(u_t - u_b, x))
 
-    disp_v_r = np.asarray(solution.displacement(x_r, y), dtype=float)
-    disp_v_l = np.asarray(solution.displacement(x_l, y), dtype=float)
-    v_r = disp_v_r[:, 1]
-    v_l = disp_v_l[:, 1]
+    v_r = disp_r[:, 1]
+    v_l = disp_l[:, 1]
     term2 = float(np.trapz(v_r - v_l, y))
 
     gamma_xy_bar = (term1 + term2) / (L * H)
 
-    return np.array([epsilon_xx_bar, epsilon_yy_bar, gamma_xy_bar], dtype=float)
+    return {
+        'effective_strains': np.array([epsilon_xx_bar, epsilon_yy_bar, gamma_xy_bar], dtype=float),
+        'displacement_right': disp_r,
+        'displacement_left': disp_l,
+        'displacement_top': disp_t,
+        'displacement_bottom': disp_b,
+    }
 
 
 def compute_permutation_invariants(E11: float, E22: float,
@@ -160,12 +168,18 @@ def compute_homogenised_properties(HoleType: Type[Hole],
     Returns
     -------
     homogenised_properties: Dict[str, Any]
-        The homogenised properties of the plate.
-        Keys: 'A_eff', 'S_eff', 'E11_eff', 'E22_eff', 'G12_eff', 'nu12_eff', 'nu21_eff'.
+        The homogenised properties of the plate, and displacements at the boundaries.
+        - 'A_eff', 'S_eff'
+        - 'E11_eff', 'E22_eff', 'G12_eff', 'nu12_eff', 'nu21_eff'
+        - 'disp_right_list', 'disp_left_list', 'disp_top_list', 'disp_bottom_list'
     '''
 
     unit_stress_vectors = np.eye(3)
-    eps_cols: list[np.ndarray] = []
+    eps_cols: List[np.ndarray] = []
+    disp_right_list: List[np.ndarray] = []
+    disp_left_list: List[np.ndarray] = []
+    disp_top_list: List[np.ndarray] = []
+    disp_bottom_list: List[np.ndarray] = []
     
     for (sx_inf, sy_inf, txy_inf) in unit_stress_vectors:
 
@@ -180,9 +194,13 @@ def compute_homogenised_properties(HoleType: Type[Hole],
         else:
             raise ValueError(f"HoleType {HoleType} not supported")
 
-        eps_eff = compute_effective_strains(
+        results_eff = compute_effective_strains(
             solution=solution, L=L, H=H, n_points_boundary=n_points_boundary)
-        eps_cols.append(eps_eff)
+        eps_cols.append(results_eff['effective_strains'])
+        disp_right_list.append(results_eff['displacement_right'])
+        disp_left_list.append(results_eff['displacement_left'])
+        disp_top_list.append(results_eff['displacement_top'])
+        disp_bottom_list.append(results_eff['displacement_bottom'])
 
     # epsilon = S_eff @ sigma_inf, with sigma_inf ordering [sx, sy, txy]
     # No further scaling by thickness is needed for `S_eff`,
@@ -210,6 +228,10 @@ def compute_homogenised_properties(HoleType: Type[Hole],
         'G12_eff': G12_eff,
         'nu12_eff': nu12_eff,
         'nu21_eff': nu21_eff,
+        'disp_right_list': disp_right_list,
+        'disp_left_list': disp_left_list,
+        'disp_top_list': disp_top_list,
+        'disp_bottom_list': disp_bottom_list,
     }
 
     return results

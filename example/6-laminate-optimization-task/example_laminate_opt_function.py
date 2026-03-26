@@ -141,10 +141,14 @@ def evaluate_laminate_design(
     eigvals, _ = buckling.buckling_analysis(num_eigvalues=5)
     lambda_cr = float(np.min(eigvals))
 
-    objective = float(total_thickness)
+    objective = float(total_thickness) * (1 - np.pi * hole_radius_mm**2 / (w_mm * h_mm))
     g_disp = max_abs_u - delta_x_limit_mm
     g_fi = fi_max - fi_limit
     g_buckle = lambda_min_limit - lambda_cr
+
+    int_layup = [int(angle) for angle in layup]
+    n_0 = int_layup.count(0)
+    n_90 = int_layup.count(90)
 
     t1 = time.time()
 
@@ -153,6 +157,15 @@ def evaluate_laminate_design(
         "objective": objective,
         "total_thickness": total_thickness,
         "n_ply": n_ply,
+        "n_0": n_0,
+        "n_90": n_90,
+        "xiA": np.round(laminate.xiA, 6).tolist(),
+        "xiB": np.round(laminate.xiB, 6).tolist(),
+        "xiD": np.round(laminate.xiD, 6).tolist(),
+        "E11_eff": properties_eff['E11_eff'],
+        "E22_eff": properties_eff['E22_eff'],
+        "G12_eff": properties_eff['G12_eff'],
+        "nu12_eff": properties_eff['nu12_eff'],
         "max_abs_u_mm": max_abs_u,
         "FI_max": fi_max,
         "lambda_cr": lambda_cr,
@@ -184,9 +197,23 @@ def main() -> None:
     lines = [
         "Laminate optimization function example",
         "====================================",
+        "",
+        "Layup parameters:",
         f"Layup (deg): {result['layup_deg']}",
         f"Number of plies: {len(result['layup_deg'])}",
-        f"Objective (min total thickness): {result['objective']:.3f}",
+        f"Number of 0-degree plies:  {result['n_0']}",
+        f"Number of 90-degree plies: {result['n_90']}",
+        f"xiA: {result['xiA']}",
+        f"xiB: {result['xiB']}",
+        f"xiD: {result['xiD']}",
+        "",
+        "Effective properties:",
+        f"  E11_eff:  {result['E11_eff']:.3f}",
+        f"  E22_eff:  {result['E22_eff']:.3f}",
+        f"  G12_eff:  {result['G12_eff']:.3f}",
+        f"  nu12_eff: {result['nu12_eff']:.3f}",
+        "",
+        f"Objective (min weight): {result['objective']:.3f}",
         "",
         "Computed responses:",
         f"  max|u_x|  [mm] = {result['max_abs_u_mm']:.6f}",

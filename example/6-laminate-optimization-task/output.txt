@@ -1,8 +1,22 @@
 Laminate optimization function example
 ====================================
+
+Layup parameters:
 Layup (deg): [45, -45, 0, -45, 45, 0, 0, 90, 90, 0, 0, 45, -45, 0, -45, 45]
 Number of plies: 16
-Objective (min total thickness): 2.000
+Number of 0-degree plies:  6
+Number of 90-degree plies: 2
+xiA: [0.25, 0.0, 0.0, -0.0]
+xiB: [0.0, 0.0, 0.0, 0.0]
+xiD: [0.226562, 0.035156, -0.539062, 0.0]
+
+Effective properties:
+  E11_eff:  78005.305
+  E22_eff:  43560.962
+  G12_eff:  23538.112
+  nu12_eff: 0.430
+
+Objective (min weight): 1.984
 
 Computed responses:
   max|u_x|  [mm] = 0.032456
@@ -21,4 +35,4 @@ Constraint residuals g (feasible if g <= 0):
 
 Layup feasible:   True
 Overall feasible: True
-Time taken: 44.32 seconds
+Time taken: 49.97 seconds

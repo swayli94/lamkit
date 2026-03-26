@@ -96,6 +96,10 @@ def calculate_effective_properties(laminate: Laminate,
         'A_eff': properties_eff['A_eff'],
         'S_lam': S_lam,
         'S_eff': properties_eff['S_eff'],
+        'disp_right_list': properties_eff['disp_right_list'],
+        'disp_left_list': properties_eff['disp_left_list'],
+        'disp_top_list': properties_eff['disp_top_list'],
+        'disp_bottom_list': properties_eff['disp_bottom_list'],
     }
     
     for key in ['E11', 'E22', 'G12', 'nu12']:
@@ -153,26 +157,30 @@ def print_comparison(results: Dict[str, Any]) -> None:
 def main() -> None:
     
     # Example laminate (quasi-isotropic).
+    layup = [0]
+    layup = [90]
+    layup = [45, -45, 0, 90, 90, 0, -45, 45]
     layup = [45, -45, 0, -45, 45, 0, 0, 90, 90, 0, 0, 45, -45, 0, -45, 45]
-    ply_thickness_mm = 0.125
-
-    ply = Ply(material=IM7_8551_7, thickness=ply_thickness_mm)
-    laminate = Laminate(stacking=layup, plies=ply)
 
     # Plot ratio curves of effective properties vs. laminate reference.
     #   {prop}_eff / {prop}_lam, where prop in [E11, E22, G12, nu12].
     properties = ["E11", "E22", "G12", "nu12"]
 
-    r_list = [1, 10]  # mm
-    w_r_ratios = [2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 4, 5] + [i for i in range(6, 21, 2)]  # w/r ratio
+    case_list = [(1, 0.1), (2, 1.0)]  # (r_mm, ply_thickness_mm)
+    w_r_ratios = [2.1, 2.2, 2.4, 2.6, 2.8, 3.0, 3.2, 3.4, 3.6, 3.8, 4.0, 4.5,
+                  5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50]  # w/r ratio
 
-    # ratios[prop][i_r, i_wr] = prop_eff / prop_lam
+    # ratios[prop][i_curve, i_wr] = prop_eff / prop_lam
     ratios: Dict[str, np.ndarray] = {
-        prop: np.zeros((len(r_list), len(w_r_ratios)), dtype=float)
+        prop: np.zeros((len(case_list), len(w_r_ratios)), dtype=float)
         for prop in properties
     }
 
-    for i_r, r_mm in enumerate(r_list):
+    for i_curve, (r_mm, ply_thickness_mm) in enumerate(case_list):
+        
+        ply = Ply(material=IM7_8551_7, thickness=ply_thickness_mm)
+        laminate = Laminate(stacking=layup, plies=ply)
+        
         for i_wr, w_r_ratio in enumerate(w_r_ratios):
             w_plate_mm = float(w_r_ratio) * float(r_mm)
 
@@ -189,26 +197,26 @@ def main() -> None:
             for prop in properties:
                 lam_val = float(results[f"{prop}_lam"])
                 eff_val = float(results[f"{prop}_eff"])
-                ratios[prop][i_r, i_wr] = eff_val / (lam_val + 1e-30)  # avoid division-by-zero
+                ratios[prop][i_curve, i_wr] = eff_val / (lam_val + 1e-30)  # avoid division-by-zero
 
     # --- Plot (2x2 subplots) ---
     fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=True)
     axes_flat = axes.ravel()
 
     for ax, prop in zip(axes_flat, properties):
-        for i_r, r_mm in enumerate(r_list):
+        for i_curve, (r_mm, ply_thickness_mm) in enumerate(case_list):
             ax.plot(
                 w_r_ratios,
-                ratios[prop][i_r, :],
+                ratios[prop][i_curve, :],
                 marker="o",
                 linewidth=1.8,
-                label=f"r={r_mm} mm",
+                label=f"r={r_mm} mm, t_ply={ply_thickness_mm} mm",
             )
 
         ax.set_title(prop)
         ax.set_xlabel("w/r")
         ax.set_ylabel(f"Ratio of {prop}")
-        ax.set_xlim(2, 21)
+        ax.set_xlim(2, 51)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize="small")
 
@@ -221,9 +229,86 @@ def main() -> None:
 
     out_path = os.path.join(path, "images", "open_hole_homogenisation.png")
     fig.savefig(out_path, dpi=200)
-    print(f"Saved plot: {out_path}")
+    
+    # Plot ratio curves of displacements at the boundaries vs. laminate reference.
+    
+    w_r_ratios = [2.1, 2.5, 3, 5, 10]  # w/r ratio
+    r_mm = 1.0
+    colors = ['red', 'orange', 'green', 'blue', 'purple']
+    n_points_boundary = 101
+    magnitude_factor = 1e4
+    
+    ply = Ply(material=IM7_8551_7, thickness=1.0)
+    laminate = Laminate(stacking=layup, plies=ply)
+    
+    fig, axes = plt.subplots(1, 3, figsize=(12, 6), sharex=True)
+    axes_flat = axes.ravel()
 
+    for i_wr, w_r_ratio in enumerate(w_r_ratios):
+        
+        w_plate_mm = float(w_r_ratio) * float(r_mm)
+        coords = w_plate_mm*0.5*np.linspace(-1, 1, n_points_boundary)
 
+        results = calculate_effective_properties(
+            laminate=laminate,
+            lx_plate_mm=w_plate_mm,
+            ly_plate_mm=w_plate_mm,
+            hole_radius_mm=float(r_mm),
+            n_points_boundary=n_points_boundary,
+        )
+        
+        # Displacements (u,v) at the boundaries (right, left, top, bottom)
+        # for 3 unit stress states [sigma_xx_inf, sigma_yy_inf, tau_xy_inf].
+        disp_right_list = results['disp_right_list'] # [3][n_points_boundary, 2]
+        disp_left_list = results['disp_left_list']
+        disp_top_list = results['disp_top_list']
+        disp_bottom_list = results['disp_bottom_list']
+    
+        # Plot displacements: each stress state in one subplot.
+        for i_stress, stress_state in enumerate([r'$\sigma_{xx}^{\infty}$', r'$\sigma_{yy}^{\infty}$', r'$\tau_{xy}^{\infty}$']):
+            
+            if i_wr == 0:
+                axes_flat[i_stress].add_patch(plt.Circle((0, 0), r_mm, color='black', linewidth=1.8, fill=False))
+            
+            axes_flat[i_stress].plot(-0.5*w_plate_mm+disp_left_list[i_stress][:, 0]*magnitude_factor,
+                                    coords+disp_left_list[i_stress][:, 1]*magnitude_factor,
+                                    color=colors[i_wr], linewidth=1.0)
+
+            axes_flat[i_stress].plot( 0.5*w_plate_mm+disp_right_list[i_stress][:, 0]*magnitude_factor,
+                                    coords+disp_right_list[i_stress][:, 1]*magnitude_factor,
+                                    color=colors[i_wr], linewidth=1.0)
+
+            axes_flat[i_stress].plot(coords+disp_bottom_list[i_stress][:, 0]*magnitude_factor, 
+                                    -0.5*w_plate_mm+disp_bottom_list[i_stress][:, 1]*magnitude_factor, 
+                                    color=colors[i_wr], linewidth=1.0)
+
+            axes_flat[i_stress].plot(coords+disp_top_list[i_stress][:, 0]*magnitude_factor,
+                                    0.5*w_plate_mm+disp_top_list[i_stress][:, 1]*magnitude_factor, 
+                                    color=colors[i_wr], linewidth=1.0,
+                                    label=f"w/r={w_r_ratio:.1f}")
+            
+            if i_wr == len(w_r_ratios) - 1:
+                
+                axes_flat[i_stress].set_xlabel('x')
+                axes_flat[i_stress].set_ylabel('y')
+                axes_flat[i_stress].set_title(stress_state)
+                axes_flat[i_stress].grid(True, alpha=0.3)
+                
+                axes_flat[i_stress].set_xlim(-0.8*w_plate_mm, 0.8*w_plate_mm)
+                axes_flat[i_stress].set_ylim(-0.8*w_plate_mm, 0.8*w_plate_mm)
+                axes_flat[i_stress].axis('equal')
+                axes_flat[i_stress].legend(fontsize="small")
+
+    fig.suptitle(
+        f"Open Hole Plate: Displacements at the boundaries\n"+ \
+        f"Layup: {layup}\n"+ \
+        f"Magnify factor: {magnitude_factor:.1e}",
+        fontsize=14,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 1])
+
+    out_path = os.path.join(path, "images", "open_hole_displacements.png")
+    fig.savefig(out_path, dpi=200)
 
 
 if __name__ == "__main__":
