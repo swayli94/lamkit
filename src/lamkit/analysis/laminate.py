@@ -542,6 +542,67 @@ class Laminate():
     
 
     #* Static methods
+    @staticmethod
+    def get_lamination_parameters(stacking: List[float]) -> Dict[str, float]:
+        '''
+        Calculate the lamination parameters of the stacking sequence,
+        i.e., ply angles (degrees).
+        
+        Note: the plies are assumed to have the same material and thickness.
+        
+        Returns
+        -------
+        lamination_parameters: Dict[str, float]
+            Lamination parameters, i.e.,
+            {'xiA': [xiA1, xiA2, xiA3, xiA4],
+            'xiB': [xiB1, xiB2, xiB3, xiB4],
+            'xiD': [xiD1, xiD2, xiD3, xiD4]}.
+        '''
+        xiA = np.zeros(4)
+        xiB = np.zeros(4)
+        xiD = np.zeros(4)
+        n_ply = len(stacking)
+        z_position = np.cumsum([0] + [1.0 for _ in stacking]) - n_ply/2.0
+        stacking = np.deg2rad(stacking) # radians
+
+        for i, angle in enumerate(stacking):
+            
+            zk1 = z_position[i+1]
+            zk0 = z_position[i]
+            
+            c2 = np.cos(2*angle)
+            s2 = np.sin(2*angle)
+            c4 = np.cos(4*angle)
+            s4 = np.sin(4*angle)
+
+            dz = zk1 - zk0
+            xiA[0] += dz * c2
+            xiA[1] += dz * s2
+            xiA[2] += dz * c4
+            xiA[3] += dz * s4
+        
+            dz2 = zk1**2 - zk0**2
+            xiB[0] += dz2 * c2
+            xiB[1] += dz2 * s2
+            xiB[2] += dz2 * c4
+            xiB[3] += dz2 * s4
+
+            dz3 = zk1**3 - zk0**3
+            xiD[0] += dz3 * c2
+            xiD[1] += dz3 * s2
+            xiD[2] += dz3 * c4
+            xiD[3] += dz3 * s4
+        
+        xiA = xiA / n_ply
+        xiB = 4 * xiB / n_ply**2
+        xiD = 4 * xiD / n_ply**3
+        
+        return {
+            'xiA': xiA,
+            'xiB': xiB,
+            'xiD': xiD,
+        }
+    
     
     @staticmethod
     def get_epsilon0(ABD: np.ndarray, N: np.ndarray) -> np.ndarray:

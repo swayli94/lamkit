@@ -27,3 +27,7 @@ docs/_build/
 # IDE
 .idea/
 .vscode/
+
+# Data
+
+data/
