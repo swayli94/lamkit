@@ -31,3 +31,6 @@ docs/_build/
 # Data
 
 data/
+
+# For coding/testing purposes
+old/

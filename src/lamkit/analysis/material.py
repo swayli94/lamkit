@@ -4,6 +4,7 @@ Material class.
 
 import numpy as np
 import itertools
+from typing import Dict
 
 
 class Material(object):
@@ -127,6 +128,13 @@ class Material(object):
             self._invariants = np.array([U1, U2, U3, U4, U5])
             
         return self._invariants
+
+    @property
+    def properties_dictionary(self) -> Dict[str, float]:
+        '''
+        Properties dictionary of the Material.
+        '''
+        return self._properties
 
 
     def get_rotation_matrix(self, angle_degree: float) -> np.ndarray:

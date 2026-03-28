@@ -18,19 +18,21 @@ Date: 2025-10-19
 
 import numpy as np
 
-from typing import Final, Any, Tuple
+from typing import Final, Any, Tuple, Dict
+
+from lamkit.analysis.failure import FailureCriteria
 
 
 FAILURE_MODE_NAMES = {
-    1: 'matrix_cracking',
-    2: 'matrix_splitting',
-    3: 'fibre_tension',
-    4: 'fibre_kinking',
-    5: 'matrix_interface',
+    1: 'matrix cracking',
+    2: 'matrix splitting',
+    3: 'fibre tension',
+    4: 'fibre kinking',
+    5: 'matrix interface',
 }
 
 
-class LaRC05(object):
+class LaRC05(FailureCriteria):
     '''
     LaRC05 composite material failure criteria in the form of Abaqus User-defined output variables (UVARM).
     
@@ -40,47 +42,35 @@ class LaRC05(object):
     Parameters
     ------------------
     nSCply: int
-
         Number of stress components at this point, 3 or 6.
-        
-        nSCply = 3: 2D element, stress components: [n11, n22, n12]
-        nSCply = 6: 3D element, stress components: [n11, n22, n33, n12, n13, n23]
+        - nSCply = 3: 2D element, stress components: [n11, n22, n12]
+        - nSCply = 6: 3D element, stress components: [n11, n22, n33, n12, n13, n23]
 
     material: str
-    
         Material name, e.g., 'IM7/8551-7'.
 
 
     Attributes
     ------------------
     NFI: int
-    
         Number of failure indexes, default is 5. Including:
-        
-        1) Matrix cracking;
-        2) Matrix splitting;
-        3) Fibre tension;
-        4) Fibre kinking;
-        5) Matrix interface (transverse inter-bundle failure mode);
-    
+        - 1: Matrix cracking;
+        - 2: Matrix splitting;
+        - 3: Fibre tension;
+        - 4: Fibre kinking;
+        - 5: Matrix interface (transverse inter-bundle failure mode);
     NUVARM: int
-    
         Number of user-defined output variables, default is 7. Including:
-
-        1-5) Failure indexes;
-        6) Maximum failure index;
-        7) Failure mode;
-    
+        - 1-5: Failure indexes;
+        - 6: Maximum failure index;
+        - 7: Failure mode;
     LIMIT_UVARM: float
-
         Constant. Maximum value of the max failure index (UVARM6), default is 1.0.
-
     isElement3D: bool
-    
         Whether processing 3D elements or not.
 
     '''
-    def __init__(self, nSCply: int, material='IM7/8551-7') -> None:
+    def __init__(self, nSCply: int, material_properties: Dict[str, float]) -> None:
         
         #* Constant parameters
         self.NFI         : Final[int] = 5
@@ -102,11 +92,33 @@ class LaRC05(object):
             raise Exception
 
         #* Initialize ply properties
-        rProps = self.get_property(material)
+        self.check_property(material_properties)
+
+        self.ply = PlyProperty(material_properties)
         
-        self.ply = PlyProperty(rProps)
+        self.FISolver = Larc05FailureCriteria(self.nSCply)
         
-        self.FISolver = FailureCriteria(self.nSCply)
+    def evaluate(self, stresses: np.ndarray, oldUVARM=None, limitFIDen=False) -> np.ndarray:
+        '''
+        Evaluate the failure indices.
+        
+        Parameters
+        ------------------
+        stresses: ndarray [nSCply]
+            Ply stresses in local reference frame
+        oldUVARM: ndarray [7], or None
+            History UVARM of this ply. If None, then zeros.
+        limitFIDen: bool
+            Flag for denominator limitation for damage propagation
+
+        Returns
+        ------------------
+        currentUVARM: ndarray [7]
+            An array containing the user-defined output variables. 
+            In Abaqus, these are passed in as the values at the beginning of the increment and 
+            must be returned as the values at the end of the increment.
+        '''
+        return self.get_uvarm(stresses, oldUVARM=oldUVARM, limitFIDen=limitFIDen)
 
     def get_uvarm(self, plyStresses: np.ndarray, oldUVARM=None, limitFIDen=False) -> np.ndarray:
         '''
@@ -115,21 +127,15 @@ class LaRC05(object):
         Parameters
         ------------------
         plyStresses: ndarray [nSCply]
-        
             Ply stresses in local reference frame
-        
         oldUVARM: ndarray [7], or None
-        
             History UVARM of this ply. If None, then zeros.
-
         limitFIDen: bool
-        
             Flag for denominator limitation for damage propagation
 
         Returns
         ------------------
         currentUVARM: ndarray [7]
-        
             An array containing the user-defined output variables. 
             In Abaqus, these are passed in as the values at the beginning of the increment and 
             must be returned as the values at the end of the increment.
@@ -171,17 +177,13 @@ class LaRC05(object):
         Parameters
         ------------------
         material: str
-        
             Material name, e.g., 'IM7/8551-7'.
-            
             Use the default value if the key is missing, or the value is None.
 
         Returns
         ------------------
-        rProps: dict
-        
+        material_properties: dict
             Dictionary containing material properties.
-            
             Use the default value if the key is missing, or the value is None.
 
         '''
@@ -208,7 +210,7 @@ class LaRC05(object):
         }
         
         if material == 'IM7/8551-7':
-            rProps = rProps_IM7_8551_7
+            material_properties = rProps_IM7_8551_7
             
         else:
             print()
@@ -217,7 +219,19 @@ class LaRC05(object):
             print()
             raise Exception
             
-        return rProps
+        return material_properties
+    
+    @staticmethod
+    def check_property(properties: Dict[str, float]):
+        '''
+        Check whether the properties dictionary contains all the required keys.
+        '''
+        required_keys_elasticity = ['E11', 'E22', 'nu12', 'G12',
+                                'Xt', 'Xc', 'Yt', 'Yc', 'Sl',
+                                'a0', 'nL', 'nT', 'ILSS', 'Zt', 
+                                'G1cMat', 'G2cMat', 'G1cFibT', 'G1cFibK', 'GAlphaM']
+        if not all(key in properties for key in required_keys_elasticity):
+            raise ValueError(f'Properties dictionary for [LaRC05 Failure Criteria] must contain all the required keys: {required_keys_elasticity}')
     
 
 class PlyProperty(object):
@@ -226,8 +240,7 @@ class PlyProperty(object):
     
     Parameters
     ------------------
-    rProps: dict
-    
+    material_properties: dict
         Dictionary containing material properties.
     
     
@@ -235,66 +248,46 @@ class PlyProperty(object):
     ------------------
     E11, E22: float
         elastic moduli
-        
     nu12, nu21: float
         Poisson's ratio
-        
     G12: float
         shear moduli
-        
     Xt, Xc, Yt, Yc: float
         strengths
-        
     Sl, a0, nL, nT, St: float
         additional properties
-        
     YtIS, SlIS, StIS: float
         in-situ effects
-        
     phiC: float
         critical fibre misalignment angle
-        
     ILSS: float
         Inter-laminar shear strength
-    
     Zt: float
         Tensile strength in the 3rd direction
-    
     GValues: ndarray [5]
         Failure energies
-        
     G1cMat,G2cMat: float
         Matrix mode I, II critical energy release rate
-
     G1cFibT,G1cFibK: float
         Fibre tensile, kinking critical energy release rate
-        
     GAlphaM: float
         Matrix mixed-mode power law exponent (default, 1.21)
-        
     E11comp: float
         Compression modulus
-        
     E33: float
         Through the thick
-        
     nu23, nu13: float
-        Poisson's
-        
+        Poisson's ratio in 23-plane and 13-plane
     G13, G23: float
         more shear components
-        
     viscosity: float
         viscous regularization
-        
     PTYP: int
         ply type
-        
     TENCOMP: bool
         tension compression flag
-
     '''
-    def __init__(self, rProps: dict, 
+    def __init__(self, material_properties: Dict[str, float], 
                     DEFAULT_A0=53.0, DEFAULT_AG=1.21, 
                     DEFAULT_NU23=0.5, DEFAULT_PTYP=1) -> None:
         '''
@@ -302,24 +295,15 @@ class PlyProperty(object):
         
         Parameters
         ------------------
-        rProps: dict
-        
+        material_properties: Dict[str, float]
             Dictionary containing material properties.
-            
         DEFAULT_A0: float
-
             Default fracture angle for pure compression (53 degrees)
-            
         DEFAULT_AG: float
-        
             Default matrix mixed-mode power law exponent (1.21)
-            
         DEFAULT_NU23: float
-        
             Default Poisson's ratio in 23-plane (0.5)
-            
         DEFAULT_PTYP: int
-
             Default ply type (1 means UD)
         '''
         PLY_TYPE_UD             : Final[int] = 1
@@ -332,54 +316,54 @@ class PlyProperty(object):
         #* Load properties
         #* ---------------------------------------------------
         #* Basic properties
-        self.E11 =  rProps['E11']
-        self.E22 =  rProps['E22']
-        self.nu12 = rProps['nu12']
-        self.G12 =  rProps['G12']
-        self.Xt =   rProps['Xt']
-        self.Xc =   rProps['Xc']
-        self.Yt =   rProps['Yt']
-        self.Yc =   rProps['Yc']
-        self.Sl =   rProps['Sl']
+        self.E11 =  material_properties['E11']
+        self.E22 =  material_properties['E22']
+        self.nu12 = material_properties['nu12']
+        self.G12 =  material_properties['G12']
+        self.Xt =   material_properties['Xt']
+        self.Xc =   material_properties['Xc']
+        self.Yt =   material_properties['Yt']
+        self.Yc =   material_properties['Yc']
+        self.Sl =   material_properties['Sl']
         
-        self.a0 =   self.get_value(rProps, 'a0', default= DEFAULT_A0) / 180.0 * np.pi # radian
+        self.a0 =   self.get_value(material_properties, 'a0', default= DEFAULT_A0) / 180.0 * np.pi # radian
 
-        self.nL =   self.get_value(rProps, 'nL', 
+        self.nL =   self.get_value(material_properties, 'nL', 
                                     default= - self.Sl*np.cos(2*self.a0) / (self.Yc*np.cos(self.a0)**2))
         
-        self.nT =   self.get_value(rProps, 'nT', default= -1/np.tan(2*self.a0))
+        self.nT =   self.get_value(material_properties, 'nT', default= -1/np.tan(2*self.a0))
 
         #* Failure energies
-        self.G1cMat  = self.get_value(rProps, 'G1cMat',  None)
-        self.G2cMat  = self.get_value(rProps, 'G2cMat',  None)
-        self.G1cFibT = self.get_value(rProps, 'G1cFibT', None)
-        self.G1cFibK = self.get_value(rProps, 'G1cFibK', None)
-        self.GAlphaM = self.get_value(rProps, 'GAlphaM', DEFAULT_AG)
+        self.G1cMat  = self.get_value(material_properties, 'G1cMat',  None)
+        self.G2cMat  = self.get_value(material_properties, 'G2cMat',  None)
+        self.G1cFibT = self.get_value(material_properties, 'G1cFibT', None)
+        self.G1cFibK = self.get_value(material_properties, 'G1cFibK', None)
+        self.GAlphaM = self.get_value(material_properties, 'GAlphaM', DEFAULT_AG)
         self.GValues = np.array([self.G1cMat, self.G2cMat, self.G1cFibT, self.G1cFibK, self.GAlphaM])
         
         #* Compression modulus
-        self.TENCOMP = self.get_value(rProps, 'TENCOMP', default= True)
-        self.E11comp = self.get_value(rProps, 'E11comp', default= self.E11)
+        self.TENCOMP = self.get_value(material_properties, 'TENCOMP', default= True)
+        self.E11comp = self.get_value(material_properties, 'E11comp', default= self.E11)
 
         #* 3D properties
-        self.E33    = self.get_value(rProps, 'E33',     default= self.E22)
-        self.nu13   = self.get_value(rProps, 'nu13',    default= self.nu12)
-        self.nu23   = self.get_value(rProps, 'nu23',    default= DEFAULT_NU23)
-        self.G13    = self.get_value(rProps, 'G13',     default= self.G12)
-        self.G23    = self.get_value(rProps, 'G23',     default= self.E33/(2*(1+self.nu23)))
+        self.E33    = self.get_value(material_properties, 'E33',     default= self.E22)
+        self.nu13   = self.get_value(material_properties, 'nu13',    default= self.nu12)
+        self.nu23   = self.get_value(material_properties, 'nu23',    default= DEFAULT_NU23)
+        self.G13    = self.get_value(material_properties, 'G13',     default= self.G12)
+        self.G23    = self.get_value(material_properties, 'G23',     default= self.E33/(2*(1+self.nu23)))
 
         #* 3D NCF failure indexes
-        self.ILSS   = self.get_value(rProps, 'ILSS',    default= None)
-        self.Zt     = self.get_value(rProps, 'Zt',      default= 0.5*self.Yt)
+        self.ILSS   = self.get_value(material_properties, 'ILSS',    default= None)
+        self.Zt     = self.get_value(material_properties, 'Zt',      default= 0.5*self.Yt)
         
         if self.ILSS is None:
             self.Zt = None
             
         #* Viscous stabilization
-        self.viscosity = self.get_value(rProps, 'viscosity', default= None)
+        self.viscosity = self.get_value(material_properties, 'viscosity', default= None)
 
         #* Ply type 
-        self.PTYP   = self.get_value(rProps, 'PTYP', default= DEFAULT_PTYP)
+        self.PTYP   = self.get_value(material_properties, 'PTYP', default= DEFAULT_PTYP)
 
 
         #* ---------------------------------------------------
@@ -418,9 +402,9 @@ class PlyProperty(object):
     
         elif self.PTYP == PLY_TYPE_THIN_EMBEDDED:
             
-            G1c  = rProps['G1c']
-            G2c  = rProps['G2c']
-            Th   = rProps['Th']
+            G1c  = material_properties['G1c']
+            G2c  = material_properties['G2c']
+            Th   = material_properties['Th']
             aa   = 2 * (1/self.E22 - self.nu21/self.E11)
             self.YtIS = np.sqrt( 8 * G1c / (np.pi * Th * aa) )
             self.SlIS = np.sqrt( 8 * G2c * self.G12 / (np.pi * Th) )
@@ -428,9 +412,9 @@ class PlyProperty(object):
 
         elif self.PTYP == PLY_TYPE_THIN_OUTER:
             
-            G1c  = rProps['G1c']
-            G2c  = rProps['G2c']
-            Th   = rProps['Th']
+            G1c  = material_properties['G1c']
+            G2c  = material_properties['G2c']
+            Th   = material_properties['Th']
             aa   = 2 * (1/self.E22 - self.nu21/self.E11)
             self.YtIS = np.sqrt( 4 * G1c / (np.pi * Th * aa) )
             self.SlIS = np.sqrt( 4 * G2c * self.G12 / (np.pi * Th) )
@@ -438,9 +422,9 @@ class PlyProperty(object):
 
         elif self.PTYP == PLY_TYPE_EMBEDDED_AUTO:
             
-            G1c  = rProps['G1c']
-            G2c  = rProps['G2c']
-            Th   = rProps['Th']
+            G1c  = material_properties['G1c']
+            G2c  = material_properties['G2c']
+            Th   = material_properties['Th']
             sq2  = np.sqrt(2)
             aa   = 2 * (1/self.E22 - self.nu21/self.E11)
             aux1 = self.Yt * sq2 * 1.12
@@ -489,21 +473,15 @@ class PlyProperty(object):
         Parameters
         --------------------
         SST: float
-        
             Transverse shear stress 
-        
         SSL: float
-        
             Longitudinal shear stress 
-            
         SN: float
-        
             Normal stress
         
         Returns
         --------------------
         FI: float
-
             Failure index
         
         Notes
@@ -524,45 +502,32 @@ class PlyProperty(object):
         return np.sqrt(aux1**2 + aux2**2 + aux3**2)
 
     
-class FailureCriteria(object):
+class Larc05FailureCriteria(object):
     '''
     LaRC05 failure criteria.
     
     Five failure modes are evaluated. Each of the modes has an associated failure index FI 
     which has a unit value when failure occurs. 
     
-    
     Parameters
     ------------------        
     nSCply: int
-
         Number of stress components at this point.
     
     
     Attributes
     ------------------
     n11, n22, n33, n12, n13, n23: int
-    
         Constant, index of Sij in the stress vector
-
     NZNEG: float
-    
         Constant, NZNEG = -1E-12
-    
     NZSTRESS: float
-    
         Constant, NZSTRESS = 1E-6
-        
     NEG_STRESS_THS: float
-    
         Constant, NEG_STRESS_THS = -1E-3
-    
     KINK_ANGLE_SPACING: float
-
         Constant, KINK_ANGLE_SPACING = 30.0
-    
     isElement3D: bool
-    
         Whether processing 3D elements or not.
     
     '''
@@ -603,21 +568,15 @@ class FailureCriteria(object):
         Parameters
         ------------------
         inputStress: ndarray [6]
-
             Stress vector
-            
         angleRad: float
-        
             Rotation angle in radian
-            
         axis: int
-        
             Axis (0,1,2) represents (x,y,z), respectively
         
         Returns
         ------------------
         rotS: ndarray [6]
-
             Rotated stress vector
         '''
         rotS = np.zeros(6)
@@ -657,7 +616,7 @@ class FailureCriteria(object):
 
         else:
             print()
-            print('Error [FailureCriteria]: rotateStress')
+            print('Error [Larc05FailureCriteria]: rotateStress')
             print('    Wrong axis input: ', axis)
             print()
             raise Exception
@@ -675,29 +634,19 @@ class FailureCriteria(object):
         Parameters
         ------------------
         ply: PlyProperty
-        
             Ply material properties.
-            
         stressVector: ndarray [6]
-        
             3D stresses in local reference frame
-            
         oldFIndex: float
-        
             History failure index
-            
         matrixAngles: list
-        
             A list of angles for potential fracture planes
-        
         limitFIDen: bool
-        
             Flag for denominator limitation for damage propagation
         
         Returns
         ------------------
         FIndex: float
-        
             Failure index
         '''
         currentMax = 0.0
@@ -736,21 +685,15 @@ class FailureCriteria(object):
         Parameters
         ------------------
         ply: PlyProperty
-        
             Ply material properties.
-            
         stressVector: ndarray [6]
-        
             3D stresses in local reference frame
-            
         oldFIndex: float
-        
             History failure index
                     
         Returns
         ------------------
         FIndex: float
-        
             Failure index
         '''
         currentMax = max(0.0, stressVector[0]) / ply.Xt
@@ -782,29 +725,19 @@ class FailureCriteria(object):
         Parameters
         ------------------
         ply: PlyProperty
-        
             Ply material properties.
-            
         stressVector: ndarray [6]
-        
             3D stresses in local reference frame
-            
         oldFI_MS, oldFI_FK: float
-        
             History failure index
-            
         kinkAngles: list
-        
             A list of angles for potential kink/split planes
-        
         limitFIDen: bool
-        
             Flag for denominator limitation for damage propagation
         
         Returns
         ------------------
         fi_MS, fi_FK: float
-        
             Failure index
         '''
         fi_MS = oldFI_MS
@@ -859,21 +792,15 @@ class FailureCriteria(object):
         Parameters
         ------------------
         ply: PlyProperty
-        
             Ply material properties.
-            
         stressVector: ndarray [6]
-        
             3D stresses in local reference frame
-            
         oldFIndex: float
-        
             History failure index
                     
         Returns
         ------------------
         FIndex: float
-        
             Failure index
         '''
         if stressVector[self.n33] > self.NZSTRESS:
@@ -898,27 +825,18 @@ class FailureCriteria(object):
         Parameters
         ------------------
         ply: PlyProperty
-        
             Ply material properties.
-            
         plyStresses: ndarray [nSCply]
-        
             Ply stresses in local reference frame
-        
         oldPlyIndexes: ndarray [NFI]
-        
             History failure indexes of this ply
-
         limitFIDen: bool
-        
             Flag for denominator limitation for damage propagation
         
         Returns
         ------------------
         plyIndexes: ndarray [NFI]
-        
             Failure indexes
-        
         '''
         stressVector = np.zeros(6)
         plyIndexes   = np.zeros_like(oldPlyIndexes)
@@ -968,7 +886,7 @@ if __name__ == '__main__':
     true_uvarm = [1.652488E-03,  0.000000E+00,  6.736600E-06,  0.000000E+00,  0.000000E+00,  1.652488E-03,  1.001000E+03]
     old_uvarm = np.zeros(7)
 
-    larc05_3d = LaRC05(nSCply=6, material='IM7/8551-7')
+    larc05_3d = LaRC05(nSCply=6, material_properties=LaRC05.get_property())
 
     cur_uvarm = larc05_3d.get_uvarm(stress_vector, old_uvarm, limitFIDen=False)
     

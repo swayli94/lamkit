@@ -689,7 +689,7 @@ class Laminate():
         return Q_material @ e123
 
 
-    def get_ply_level_results(self, epsilon0: np.ndarray, larc05: LaRC05) -> List[Dict[str, Any]]:
+    def get_ply_level_results(self, epsilon0: np.ndarray, larc05: LaRC05 = None) -> List[Dict[str, Any]]:
         '''
         Get the ply-level results of the laminate.
         
@@ -698,8 +698,8 @@ class Laminate():
         epsilon0: np.ndarray (6,)
             Mid-plane strains, i.e.,
             `[epsilon_x0, epsilon_y0, gamma_xy0, kappa_x0, kappa_y0, kappa_xy0]`.
-        larc05: LaRC05
-            LaRC05 object.
+        larc05: LaRC05, optional
+            LaRC05 object. If None, the failure indices are not calculated.
             
         Returns
         -------
@@ -723,11 +723,16 @@ class Laminate():
                 s123 = Laminate.stress_material_from_strain(exy, Q_mat, theta)
                 e123 = Laminate.strain_xy_global_to_material(exy, theta)
 
-                uvarm = larc05.get_uvarm(np.asarray(s123, dtype=float))
-                fi_block = uvarm[:5]
-                fi_max = float(np.max(fi_block))
-                mode_idx = int(np.argmax(fi_block)) + 1
-                failure_mode = FAILURE_MODE_NAMES[mode_idx]
+                if larc05 is not None:
+                    uvarm = larc05.evaluate(np.asarray(s123, dtype=float))
+                    fi_block = uvarm[:5]
+                    fi_max = float(np.max(fi_block))
+                    mode_idx = int(np.argmax(fi_block)) + 1
+                    failure_mode = FAILURE_MODE_NAMES[mode_idx]
+                else:
+                    fi_block = np.zeros(5)
+                    fi_max = 0.0
+                    failure_mode = 'not calculated'
 
                 results.append(
                     {
@@ -765,8 +770,6 @@ class Laminate():
         
         Parameters
         ----------
-        laminate: Laminate
-            Laminate object (units: MPa, mm)
         N: np.ndarray (6,)
             Load vector, [Nxx, Nyy, Nxy, Mxx, Myy, Mxy].
             Nxx, Nyy, Nxy: in-plane forces (N/mm)
@@ -799,7 +802,7 @@ class Laminate():
         N = np.asarray(N, dtype=float).reshape(6)
         epsilon0 = self.get_mid_plane_strains(N)
         
-        larc05 = LaRC05(nSCply=3, material=self.ply_material.name)
+        larc05 = LaRC05(nSCply=3, material_properties=self.ply_material.properties_dictionary)
         
         results = self.get_ply_level_results(epsilon0, larc05)
 

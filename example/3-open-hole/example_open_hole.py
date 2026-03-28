@@ -21,6 +21,7 @@ from lamkit.analysis.material import IM7_8551_7, Ply
 from lamkit.analysis.laminate import Laminate
 from lamkit.lekhnitskii.utils import generate_meshgrid
 from lamkit.utils import evaluate_unloaded_hole_plate
+from lamkit.analysis.larc05 import FAILURE_MODE_NAMES
 
 DPI = 100
 
@@ -29,13 +30,6 @@ _FAILURE_MODE_CMAP_BASE = ListedColormap(
     ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 )
 _FAILURE_MODE_CMAP_BASE.set_bad("#d8d8d8")
-FAILURE_MODE_NAMES = [
-    "matrix cracking",
-    "matrix splitting",
-    "fibre tension",
-    "fibre kinking",
-    "matrix interface",
-]
 
 
 def evaluate_laminate_open_hole_field(

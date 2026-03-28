@@ -86,7 +86,7 @@ def evaluate_unloaded_hole_plate(
     n_points = x_flat.shape[0]
 
     # Failure analysis
-    larc05 = LaRC05(nSCply=3, material=laminate.ply_material.name)
+    larc05 = LaRC05(nSCply=3, material_properties=laminate.ply_material.properties_dictionary)
 
     # Unloaded hole solution for mid-plane strains
     solution = UnloadedHole(sigma_xx_inf, sigma_yy_inf, tau_xy_inf,
