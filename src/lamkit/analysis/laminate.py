@@ -54,7 +54,7 @@ class Laminate():
     '''
 
     def __init__(self, stacking: List[float]|Dict[str, List[float]],
-                    plies: List[Ply]) -> None:
+                    plies: List[Ply]|Ply) -> None:
         
         self.stacking = stacking
 

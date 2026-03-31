@@ -94,19 +94,47 @@ class LayupFeasibilityRating(object):
 
         self._tree = cKDTree(self._features, leafsize=32)
 
-    def calculate_distance(self, n_ply: int, n_0: int, n_90: int,
+    def calculate_distance(self, n_ply: float, n_0: float, n_90: float,
                     xiD1: float, xiD2: float, xiD3: float) -> Dict[str, Any]:
         '''
         Calculate the distance from input values to closest layups in the database.
+        
+        Parameters
+        ----------
+        n_ply: float
+            Number of plies (should be integer).
+        n_0: float
+            Number of 0-degree plies (should be integer).
+        n_90: float
+            Number of 90-degree plies (should be integer).
+        xiD1: float
+            Lamination parameter xiD1.
+        xiD2: float
+            Lamination parameter xiD2.
+        xiD3: float
+            Lamination parameter xiD3.
 
         Returns
         -------
-        distance: float
-            Euclidean distance in feature space.
-        layup_id: int
-            `layup_id` of the closest layup in the database.
-        stacking: List[float]
-            Stacking sequence of the closest layup in the database.
+        result: Dict[str, Any]
+            - 'distance': float
+                Euclidean distance in feature space.
+            - 'layup_id': int
+                `layup_id` of the closest layup in the database.
+            - 'stacking': List[float]
+                Stacking sequence of the closest layup in the database.
+            - 'n_0': int
+                Number of 0-degree plies in the closest layup.
+            - 'n_90': int
+                Number of 90-degree plies in the closest layup.
+            - 'n_ply': int
+                Number of plies in the closest layup.
+            - 'xiD1': float
+                Lamination parameter xiD1 of the closest layup.
+            - 'xiD2': float
+                Lamination parameter xiD2 of the closest layup.
+            - 'xiD3': float
+                Lamination parameter xiD3 of the closest layup.
         '''
         query = np.array([n_ply, n_0, n_90, xiD1, xiD2, xiD3], dtype=float)
         query = query * self._weight
