@@ -60,8 +60,8 @@ def compute_effective_strains(solution: Hole,
     u_r = disp_r[:, 0]
     u_l = disp_l[:, 0]
 
-    int_u_r = float(np.trapz(u_r, y))
-    int_u_l = float(np.trapz(u_l, y))
+    int_u_r = float(np.trapezoid(u_r, y))
+    int_u_l = float(np.trapezoid(u_l, y))
     epsilon_xx_bar = (int_u_r - int_u_l) / (L * H)
 
     # --- epsilon_yy_bar = (1/(L*H)) [ ∫ v(x,y=+H/2) dx - ∫ v(x,y=-H/2) dx ] ---
@@ -74,19 +74,19 @@ def compute_effective_strains(solution: Hole,
     v_t = disp_t[:, 1]
     v_b = disp_b[:, 1]
 
-    int_v_t = float(np.trapz(v_t, x))
-    int_v_b = float(np.trapz(v_b, x))
+    int_v_t = float(np.trapezoid(v_t, x))
+    int_v_b = float(np.trapezoid(v_b, x))
     epsilon_yy_bar = (int_v_t - int_v_b) / (L * H)
 
     # --- gamma_xy_bar = (1/(L*H)) [ ∫ (u(x,H)-u(x,0)) dx + ∫ (v(L,y)-v(0,y)) dy ] ---
     # Our coordinates: H => y_top, 0 => y_bottom; L => x_right, 0 => x_left.
     u_t = disp_t[:, 0]
     u_b = disp_b[:, 0]
-    term1 = float(np.trapz(u_t - u_b, x))
+    term1 = float(np.trapezoid(u_t - u_b, x))
 
     v_r = disp_r[:, 1]
     v_l = disp_l[:, 1]
-    term2 = float(np.trapz(v_r - v_l, y))
+    term2 = float(np.trapezoid(v_r - v_l, y))
 
     gamma_xy_bar = (term1 + term2) / (L * H)
 

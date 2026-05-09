@@ -46,6 +46,7 @@ def evaluate_unloaded_hole_plate(
         laminate: Laminate, hole_radius: float,
         sigma_xx_inf: float, sigma_yy_inf: float, tau_xy_inf: float,
         x: np.ndarray, y: np.ndarray,
+        calculate_failure: bool = True,
         ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     '''
     Calculate the stress field around a circular hole in an infinite elastic plate
@@ -86,7 +87,10 @@ def evaluate_unloaded_hole_plate(
     n_points = x_flat.shape[0]
 
     # Failure analysis
-    larc05 = LaRC05(nSCply=3, material_properties=laminate.ply_material.properties_dictionary)
+    if calculate_failure:
+        larc05 = LaRC05(nSCply=3, material_properties=laminate.ply_material.properties_dictionary)
+    else:
+        larc05 = None
 
     # Unloaded hole solution for mid-plane strains
     solution = UnloadedHole(sigma_xx_inf, sigma_yy_inf, tau_xy_inf,
@@ -111,8 +115,12 @@ def evaluate_unloaded_hole_plate(
     NUMERIC_KEYS = [
         'sigma_x', 'sigma_y', 'tau_xy', 'sigma_1', 'sigma_2', 'tau_12',
         'epsilon_x', 'epsilon_y', 'gamma_xy', 'epsilon_1', 'epsilon_2', 'gamma_12',
-        'FI_matrix_cracking', 'FI_matrix_splitting', 'FI_fibre_tension', 'FI_fibre_kinking', 'FI_matrix_interface', 'FI_max',
     ]
+    if calculate_failure:
+        NUMERIC_KEYS += [
+            'FI_matrix_cracking', 'FI_matrix_splitting', 'FI_fibre_tension',
+            'FI_fibre_kinking', 'FI_matrix_interface', 'FI_max',
+        ]
 
     def _create_dictionary_for_one_ply(
         index_ply: int, index_surface: int,
@@ -129,7 +137,8 @@ def evaluate_unloaded_hole_plate(
 
         for key in NUMERIC_KEYS:
             out[key] = np.zeros(n_points)
-        out['failure_mode'] = np.empty(n_points, dtype=object)
+        if calculate_failure:
+            out['failure_mode'] = np.empty(n_points, dtype=object)
 
         return out
     
@@ -163,13 +172,15 @@ def evaluate_unloaded_hole_plate(
                 
                 for key in NUMERIC_KEYS:
                     _result_ply[key][i] = _result_point[key]
-                _result_ply['failure_mode'][i] = _result_point['failure_mode']
+                if calculate_failure:
+                    _result_ply['failure_mode'][i] = _result_point['failure_mode']
 
     # Reshape the results to the original shape
     for ply in results_by_plies:
         for key in NUMERIC_KEYS:
             ply[key] = ply[key].reshape(out_shape)
-        ply['failure_mode'] = ply['failure_mode'].reshape(out_shape)
+        if calculate_failure:
+            ply['failure_mode'] = ply['failure_mode'].reshape(out_shape)
         
     return results_by_plies, mid_plane_field
 
