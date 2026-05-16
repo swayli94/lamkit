@@ -8,6 +8,7 @@ from lamkit.analysis.larc05 import LaRC05
 from lamkit.analysis.material import Ply, Material
 from lamkit.analysis.laminate import Laminate
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
+from lamkit.lekhnitskii.loaded_hole import LoadedHole
 
 
 def midplane_stresses_unloaded_hole_plate(
@@ -185,6 +186,159 @@ def evaluate_unloaded_hole_plate(
     return results_by_plies, mid_plane_field
 
 
+def evaluate_loaded_hole_plate(
+        laminate: Laminate, hole_radius: float,
+        load: float, thickness: float, theta: float,
+        x: np.ndarray, y: np.ndarray,
+        calculate_failure: bool = True,
+        ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    '''
+    Calculate the stress field around a loaded (bearing) circular hole in an infinite
+    elastic plate using the Lekhnitskii anisotropic solution with a cosine bearing
+    load distribution.
+
+    Parameters
+    ----------
+    laminate : Laminate
+        Laminate object (units: MPa, mm).
+    hole_radius : float
+        Hole radius (mm).
+    load : float
+        Total bearing force (N).
+    thickness : float
+        Plate thickness (mm).
+    theta : float
+        Bearing-load angle counter-clockwise from the positive x-axis (radians).
+    x : np.ndarray
+        x locations in the Cartesian coordinate system.
+    y : np.ndarray
+        y locations in the Cartesian coordinate system.
+    calculate_failure : bool, optional
+        Whether to evaluate LaRC05 failure indices.  Default True.
+
+    Returns
+    -------
+    results_by_plies : List[Dict[str, Any]]
+        List of dictionaries, each containing ply-level results.
+        Length is ``2 * n_ply`` (bottom and top surface of every ply).
+    mid_plane_field : Dict[str, Any]
+        Dictionary containing mid-plane stress and strain fields:
+        ``sigma_x``, ``sigma_y``, ``tau_xy``, ``epsilon_x``, ``epsilon_y``, ``gamma_xy``.
+    '''
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out_shape = x.shape
+    x_flat = np.atleast_1d(x).ravel()
+    y_flat = np.atleast_1d(y).ravel()
+    n_points = x_flat.shape[0]
+
+    if calculate_failure:
+        larc05 = LaRC05(nSCply=3, material_properties=laminate.ply_material.properties_dictionary)
+    else:
+        larc05 = None
+
+    solution = LoadedHole(
+        load=load,
+        diameter=2.0 * hole_radius,
+        thickness=thickness,
+        a_inv=laminate.in_plane_compliance_matrix,
+        theta=theta,
+    )
+
+    # Global-frame stresses from the bearing-load solution.
+    # LoadedHole.stress() handles the coordinate rotation internally.
+    stresses = solution.stress(x_flat, y_flat)  # (n_points, 3)
+    sigma_x_flat = stresses[:, 0]
+    sigma_y_flat = stresses[:, 1]
+    tau_xy_flat = stresses[:, 2]
+
+    # Global-frame strains via the original (unrotated) compliance matrix.
+    compliance = laminate.in_plane_compliance_matrix
+    stress_stack = np.stack([sigma_x_flat, sigma_y_flat, tau_xy_flat], axis=0)  # (3, n)
+    strain_stack = compliance @ stress_stack  # (3, n)
+    epsilon_x_flat = strain_stack[0]
+    epsilon_y_flat = strain_stack[1]
+    gamma_xy_flat = strain_stack[2]
+
+    mid_plane_field = {
+        'sigma_x': sigma_x_flat.reshape(out_shape),
+        'sigma_y': sigma_y_flat.reshape(out_shape),
+        'tau_xy': tau_xy_flat.reshape(out_shape),
+        'epsilon_x': epsilon_x_flat.reshape(out_shape),
+        'epsilon_y': epsilon_y_flat.reshape(out_shape),
+        'gamma_xy': gamma_xy_flat.reshape(out_shape),
+    }
+
+    zeros_kappa = np.zeros_like(x_flat)
+    epsilon0 = np.stack(
+        [
+            epsilon_x_flat, epsilon_y_flat, gamma_xy_flat,
+            zeros_kappa, zeros_kappa, zeros_kappa,
+        ],
+        axis=1,
+    )  # (n_points, 6)
+
+    NUMERIC_KEYS = [
+        'sigma_x', 'sigma_y', 'tau_xy', 'sigma_1', 'sigma_2', 'tau_12',
+        'epsilon_x', 'epsilon_y', 'gamma_xy', 'epsilon_1', 'epsilon_2', 'gamma_12',
+    ]
+    if calculate_failure:
+        NUMERIC_KEYS += [
+            'FI_matrix_cracking', 'FI_matrix_splitting', 'FI_fibre_tension',
+            'FI_fibre_kinking', 'FI_matrix_interface', 'FI_max',
+        ]
+
+    def _create_dictionary_for_one_ply(
+        index_ply: int, index_surface: int,
+        z_eval: float, theta_ply: float,
+        ) -> Dict[str, Any]:
+        out = {
+            'index_ply': index_ply,
+            'index_surface': index_surface,
+            'z': z_eval,
+            'angle': theta_ply,
+        }
+        for key in NUMERIC_KEYS:
+            out[key] = np.zeros(n_points)
+        if calculate_failure:
+            out['failure_mode'] = np.empty(n_points, dtype=object)
+        return out
+
+    z_pos = laminate.z_position
+
+    results_by_plies = []
+    for index_ply in range(laminate.n_ply):
+        z_bottom = z_pos[index_ply]
+        z_top = z_pos[index_ply + 1]
+        theta_ply, ply_obj = laminate.layup[index_ply]
+        theta_ply = float(theta_ply)
+        for index_surface, z_eval in ((0, z_bottom), (1, z_top)):
+            results_by_plies.append(
+                _create_dictionary_for_one_ply(index_ply, index_surface, z_eval, theta_ply))
+
+    for i in range(n_points):
+        results_one_point = laminate.get_ply_level_results(epsilon0[i, :], larc05)
+        for index_ply in range(laminate.n_ply):
+            zb = z_pos[index_ply]
+            zt = z_pos[index_ply + 1]
+            for index_surface, _z_eval in ((0, zb), (1, zt)):
+                ii = 2 * index_ply + index_surface
+                _result_ply = results_by_plies[ii]
+                _result_point = results_one_point[ii]
+                for key in NUMERIC_KEYS:
+                    _result_ply[key][i] = _result_point[key]
+                if calculate_failure:
+                    _result_ply['failure_mode'][i] = _result_point['failure_mode']
+
+    for ply in results_by_plies:
+        for key in NUMERIC_KEYS:
+            ply[key] = ply[key].reshape(out_shape)
+        if calculate_failure:
+            ply['failure_mode'] = ply['failure_mode'].reshape(out_shape)
+
+    return results_by_plies, mid_plane_field
+
+
 def create_effective_laminate_for_buckling_analysis(
     E11: float, E22: float, G12: float, nu12: float,
     total_thickness: float,
@@ -204,15 +358,8 @@ def create_effective_laminate_for_buckling_analysis(
 '''
 Provide access to the homogenisation functions.
 '''
-from lamkit.lekhnitskii.homogenisation import (
-    compute_permutation_invariants,
-    compute_effective_strains as compute_effective_strains_hole_plate,
-    compute_homogenised_properties as compute_homogenised_properties_hole_plate,
-)
 
 __all__ = [
     'evaluate_unloaded_hole_plate',
-    'compute_permutation_invariants',
-    'compute_effective_strains_hole_plate',
-    'compute_homogenised_properties_hole_plate',
+    'evaluate_loaded_hole_plate',
 ]
