@@ -4,7 +4,10 @@
 
 - Laminate stress/strain response based on Classical Lamination Theory (CLT)
 - LaRC05 failure index evaluation
-- Lekhnitskii open-hole infinite-plate analytical solution
+- Lekhnitskii analytical solutions for infinite anisotropic plates with a hole:
+  - Unloaded hole (bypass far-field stresses)
+  - Loaded hole (cosine bearing-load distribution)
+  - Combined loading (`CombinedLoadHole`): superposition of bypass and bearing
 - Open-hole plate's effective (homogenisation) properties
 - Linear buckling analysis of laminates
 - Objective/constraint evaluation for laminate optimization tasks
@@ -81,6 +84,14 @@ The `example/` directory contains runnable scripts:
 7. **Layup feasibility rating**  
    `example/7-layup-feasibility/example_layup_feasibility.py`  
    Scores a candidate stacking (ply counts, bending lamination parameters) by distance to the nearest layups in a CSV database.
+
+8. **Loaded-hole (bearing) field analysis**  
+   `example/8-loaded-hole/example_loaded_hole.py`  
+   Computes ply-level stress/strain and LaRC05 failure indices around a bearing-loaded hole using `CombinedLoadHole` with zero bypass stresses. Plots mid-plane strains, ply-enveloped failure index fields, and hole-boundary FI maps.
+
+9. **Combined bearing and bypass loading**  
+   `example/9-combined-loading/example_combined_loading.py`  
+   Superimposes an `UnloadedHole` (far-field bypass) and a `LoadedHole` (cosine bearing distribution) via `CombinedLoadHole`. Generates mid-plane stress contour plots, ply-enveloped LaRC05 failure index maps, and a hole-boundary FI distribution across angle and thickness.
 
 ## Common Development Commands
 

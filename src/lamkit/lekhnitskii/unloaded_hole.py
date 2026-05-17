@@ -1,7 +1,6 @@
 '''
 Unloaded hole in an infinite anisotropic homogeneous plate
 '''
-
 import numpy as np
 from typing import Tuple, Dict
 
@@ -204,17 +203,10 @@ class UnloadedHole(Hole):
             [[sx0, sy0, sxy0], [sx1, sy1, sxy1], ... , [sxn, syn, sxyn]]
             (n, 3) in-plane stress components in the cartesian coordinate system
         '''
-        sx, sy, sxy = super().stress(x, y).T
-        
-        _stress = np.array([
-            sx + self.sigma_xx_inf,
-            sy + self.sigma_yy_inf,
-            sxy + self.tau_xy_inf]).T
-        
-        return _stress
+        return super().stress(x, y) + [self.sigma_xx_inf, self.sigma_yy_inf, self.tau_xy_inf]
 
     def calculate_field_results(self, x: np.ndarray, y: np.ndarray, 
-                                out_shape: Tuple[int, int] = None) -> Dict[str, np.ndarray]:
+                out_shape: Tuple[int, int]|None = None) -> Dict[str, np.ndarray]:
         '''
         Calculates the stress at (x, y) points in the plate
         
@@ -236,23 +228,12 @@ class UnloadedHole(Hole):
         field['sigma_y'] += self.sigma_yy_inf
         field['tau_xy'] += self.tau_xy_inf
 
-        stress_stack = np.stack(
-            [
-                np.ravel(field['sigma_x']),
-                np.ravel(field['sigma_y']),
-                np.ravel(field['tau_xy']),
-            ],
-            axis=0,
-        )
+        shape = field['sigma_x'].shape
+        stress_stack = np.stack([
+            field['sigma_x'].ravel(), field['sigma_y'].ravel(), field['tau_xy'].ravel()])
         strain_stack = self.s @ stress_stack
-        if out_shape is not None:
-            field['epsilon_x'] = strain_stack[0].reshape(out_shape)
-            field['epsilon_y'] = strain_stack[1].reshape(out_shape)
-            field['gamma_xy'] = strain_stack[2].reshape(out_shape)
-        else:
-            field['epsilon_x'] = strain_stack[0]
-            field['epsilon_y'] = strain_stack[1]
-            field['gamma_xy'] = strain_stack[2]
+        field['epsilon_x'], field['epsilon_y'], field['gamma_xy'] = [
+            row.reshape(shape) for row in strain_stack]
 
         return field
 

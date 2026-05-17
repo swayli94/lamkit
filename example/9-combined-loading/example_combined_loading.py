@@ -1,5 +1,14 @@
 """
-Laminate loaded-hole (bearing) stress field prediction (2D infinite plate assumption).
+Combined bearing and bypass loading in an infinite anisotropic plate (2D infinite plate assumption).
+
+Superposition of:
+  - UnloadedHole: far-field (bypass) stresses at infinity
+  - LoadedHole:   cosine bearing load distribution inside the hole
+
+Outputs:
+  - Mid-plane stress / strain contour plots
+  - Ply-enveloped LaRC05 failure index contour plots
+  - Hole-boundary FI distribution across plies and angle
 """
 
 from __future__ import annotations
@@ -25,14 +34,21 @@ from lamkit.analysis.larc05 import FAILURE_MODE_NAMES
 
 DPI = 100
 
-_FAILURE_MODE_CMAP_BASE = ListedColormap(
+_FAILURE_MODE_CMAP = ListedColormap(
     ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 )
-_FAILURE_MODE_CMAP_BASE.set_bad("#d8d8d8")
+_FAILURE_MODE_CMAP.set_bad("#d8d8d8")
 
 
-def evaluate_laminate_loaded_hole_field(
+# ---------------------------------------------------------------------------
+# Field evaluation
+# ---------------------------------------------------------------------------
+
+def evaluate_laminate_combined_load_field(
     layup: list[float],
+    sigma_xx_inf: float,
+    sigma_yy_inf: float,
+    tau_xy_inf: float,
     load: float,
     thickness: float,
     theta: float = 0.0,
@@ -40,14 +56,17 @@ def evaluate_laminate_loaded_hole_field(
     plot_radius: float = 8.0,
     n_points: int = 181,
     ply_thickness: float = 0.125,
-    ) -> tuple[dict[str, np.ndarray], list[dict[str, Any]]]:
+) -> tuple[dict[str, np.ndarray], list[dict[str, Any]]]:
     """
-    Predict stress field around a loaded (bearing) hole (no plotting).
+    Compute stress/strain field and ply-by-ply LaRC05 results for
+    combined bypass + bearing loading.
 
     Parameters
     ----------
     layup : list[float]
         Ply angles in degrees.
+    sigma_xx_inf, sigma_yy_inf, tau_xy_inf : float
+        Bypass stresses applied at infinity (MPa).
     load : float
         Total bearing force (N).
     thickness : float
@@ -68,11 +87,10 @@ def evaluate_laminate_loaded_hole_field(
     field : dict
         Mesh coordinates and mid-plane stress/strain fields.
     results_by_plies : list[dict]
-        Ply-surface results (length 2*n_ply).
+        Ply-surface results (length ``2 * n_ply``).
     """
     ply = Ply(material=IM7_8551_7, thickness=ply_thickness)
     laminate = Laminate(stacking=layup, plies=ply)
-    compliance_matrix = laminate.in_plane_compliance_matrix
 
     mesh = generate_meshgrid(
         hole_radius=hole_radius,
@@ -85,44 +103,100 @@ def evaluate_laminate_loaded_hole_field(
     Y = mesh["Y"]
 
     results_by_plies, mid_plane_field = evaluate_combined_load_plate(
-        laminate,
-        sigma_xx_inf=0.0,
-        sigma_yy_inf=0.0,
-        tau_xy_inf=0.0,
+        laminate=laminate,
+        sigma_xx_inf=sigma_xx_inf,
+        sigma_yy_inf=sigma_yy_inf,
+        tau_xy_inf=tau_xy_inf,
         load=load,
         angle_load_degree=np.rad2deg(theta),
         hole_radius=hole_radius,
         thickness=thickness,
-        x=X, y=Y
+        x=X,
+        y=Y,
     )
-    evaluate_larc05_from_results(results_by_plies,
-        properties_dictionary=laminate.ply_material.properties_dictionary)
+    evaluate_larc05_from_results(results_by_plies, laminate.ply_material.properties_dictionary)
 
     z_edges = np.array(laminate.z_position, dtype=float)
     field = {
         "X": X,
         "Y": Y,
-        "sigma_xx": mid_plane_field["sigma_x"],
-        "sigma_yy": mid_plane_field["sigma_y"],
+        "sigma_x": mid_plane_field["sigma_x"],
+        "sigma_y": mid_plane_field["sigma_y"],
         "tau_xy": mid_plane_field["tau_xy"],
         "epsilon_x": mid_plane_field["epsilon_x"],
         "epsilon_y": mid_plane_field["epsilon_y"],
         "gamma_xy": mid_plane_field["gamma_xy"],
-        "compliance_matrix": compliance_matrix,
         "z_edges": z_edges,
     }
     return field, results_by_plies
 
 
-def extract_hole_boundary_field(
-    field: dict[str, np.ndarray], n_plies: int,
-    results_by_plies: list[dict[str, Any]],
-    ) -> dict[str, np.ndarray]:
-    """
-    Hole-boundary stress / LaRC05 maps from ``evaluate_laminate_loaded_hole_field`` output.
+# ---------------------------------------------------------------------------
+# Post-processing helpers
+# ---------------------------------------------------------------------------
 
-    ``generate_meshgrid`` places radial index 0 at ``r = hole_radius``; this function
-    extracts that ring from every entry in ``results_by_plies`` (ply bottom/top surfaces).
+def envelope_fi_of_all_plies(
+        results_by_plies: List[Dict[str, Any]]) -> Dict[str, np.ndarray]:
+    """
+    Through-thickness envelope of LaRC05 fields.
+
+    Returns
+    -------
+    results : dict
+        ``FI_matrix_cracking``, ``FI_matrix_splitting``, ``FI_fibre_tension``,
+        ``FI_fibre_kinking``, ``FI_max``, ``failure_mode``, ``failure_ply_index``,
+        each of shape ``(nx, ny)``.
+    """
+    component_keys: List[str] = [
+        "FI_matrix_cracking",
+        "FI_matrix_splitting",
+        "FI_fibre_tension",
+        "FI_fibre_kinking",
+        "FI_matrix_interface",
+    ]
+    stacked_comp = np.stack(
+        [np.stack([p[k] for p in results_by_plies], axis=0) for k in component_keys],
+        axis=0,
+    )
+
+    env = np.max(stacked_comp, axis=1)        # (5, nx, ny)
+    max_env = np.max(env, axis=0)
+    mode = np.argmax(env, axis=0).astype(np.float64) + 1.0
+    mode[max_env < 1e-15] = np.nan
+
+    imax = np.max(stacked_comp, axis=0)       # (n_surf, nx, ny)
+    imax = np.argmax(imax, axis=0)            # (nx, ny)
+
+    stacked_max = np.stack([p["FI_max"] for p in results_by_plies], axis=0)
+    fi_max = np.max(stacked_max, axis=0)
+
+    return {
+        "FI_matrix_cracking": env[0],
+        "FI_matrix_splitting": env[1],
+        "FI_fibre_tension": env[2],
+        "FI_fibre_kinking": env[3],
+        "FI_max": fi_max,
+        "failure_mode": mode,
+        "failure_ply_index": imax,
+    }
+
+
+def extract_hole_boundary_field(
+    field: dict[str, np.ndarray],
+    n_plies: int,
+    results_by_plies: List[Dict[str, Any]],
+) -> dict[str, np.ndarray]:
+    """
+    Hole-boundary (radial index 0) stress / LaRC05 maps across angle and thickness.
+
+    Returns
+    -------
+    boundary : dict
+        ``theta_deg``, ``z_edges``, ``z_centers``, ``sigma1_map``,
+        ``sigma2_map``, ``tau12_map``, ``fi_max_map``,
+        ``fi_matrix_cracking_map``, ``fi_matrix_splitting_map``,
+        ``fi_fibre_tension_map``, ``fi_fibre_kinking_map``,
+        ``fi_matrix_interface_map`` — each of shape ``(2*n_plies, n_theta)``.
     """
     x_mesh = field["X"][0, :]
     y_mesh = field["Y"][0, :]
@@ -131,7 +205,7 @@ def extract_hole_boundary_field(
     theta_rad = np.unwrap(theta_rad)
     theta_deg = np.rad2deg(theta_rad)
     if theta_deg.size > 0 and theta_deg[0] < 0.0:
-        theta_deg = theta_deg + 360.0
+        theta_deg += 360.0
     n_theta = int(x_mesh.shape[0])
 
     z_iface = np.asarray(field["z_edges"], dtype=float)
@@ -187,98 +261,110 @@ def extract_hole_boundary_field(
     }
 
 
-def envelope_fi_of_all_plies(
-        results_by_plies: List[Dict[str, Any]]) -> Dict[str, np.ndarray]:
-    """
-    Through-thickness envelope of LaRC05 fields.
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
 
-    Returns
-    -------
-    results : dict
-        ``FI_matrix_cracking``, ``FI_matrix_splitting``, ``FI_fibre_tension``,
-        ``FI_fibre_kinking``, ``FI_max``, ``failure_mode``, ``failure_ply_index``,
-        each of shape ``(nx, ny)``.
+def plot_midplane_field(
+    field: dict[str, np.ndarray],
+    hole_radius: float,
+    layup: list[float],
+    sigma_xx_inf: float,
+    sigma_yy_inf: float,
+    tau_xy_inf: float,
+    load: float,
+    thickness: float,
+    theta: float,
+    out_path: str = None,
+) -> None:
     """
-    component_keys: List[str] = [
-        "FI_matrix_cracking",
-        "FI_matrix_splitting",
-        "FI_fibre_tension",
-        "FI_fibre_kinking",
-        "FI_matrix_interface",
-    ]
-    stacked_comp = np.stack(
-        [np.stack([p[k] for p in results_by_plies], axis=0) for k in component_keys],
-        axis=0,
+    2×3 panel: mid-plane σₓₓ, σᵧᵧ, τₓᵧ, εₓ, εᵧ, γₓᵧ contour plots.
+    """
+    X = field["X"]
+    Y = field["Y"]
+    theta_deg = np.rad2deg(theta)
+
+    title = (
+        f"Combined loading: layup={layup}\n"
+        f"bypass: σxx={sigma_xx_inf}, σyy={sigma_yy_inf}, "
+        f"τxy={tau_xy_inf} MPa  |  "
+        f"bearing: {load} N, t={thickness} mm, θ={theta_deg:.1f}°"
     )
 
-    env = np.max(stacked_comp, axis=1)        # (5, nx, ny)
-    max_env = np.max(env, axis=0)
-    mode = np.argmax(env, axis=0).astype(np.float64) + 1.0
-    mode[max_env < 1e-15] = np.nan
+    subplots = [
+        (field["sigma_x"], r"$\sigma_{xx}$ (MPa)"),
+        (field["sigma_y"], r"$\sigma_{yy}$ (MPa)"),
+        (field["tau_xy"], r"$\tau_{xy}$ (MPa)"),
+        (field["epsilon_x"], r"$\varepsilon_{x}$"),
+        (field["epsilon_y"], r"$\varepsilon_{y}$"),
+        (field["gamma_xy"], r"$\gamma_{xy}$"),
+    ]
 
-    imax = np.max(stacked_comp, axis=0)       # (n_surf, nx, ny)
-    imax = np.argmax(imax, axis=0)            # (nx, ny)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11))
+    fig.suptitle(title, fontsize=11)
 
-    stacked_max = np.stack([p["FI_max"] for p in results_by_plies], axis=0)
-    fi_max = np.max(stacked_max, axis=0)
+    for ax, (data, label) in zip(axes.ravel(), subplots):
+        cf = ax.contourf(X, Y, data, levels=60)
+        ax.add_patch(plt.Circle((0, 0), hole_radius, color="black", fill=False))
+        ax.set_title(label)
+        ax.set_aspect("equal")
+        ax.set_xlabel("x (mm)")
+        ax.set_ylabel("y (mm)")
+        fig.colorbar(cf, ax=ax, shrink=0.85)
 
-    return {
-        "FI_matrix_cracking": env[0],
-        "FI_matrix_splitting": env[1],
-        "FI_fibre_tension": env[2],
-        "FI_fibre_kinking": env[3],
-        "FI_max": fi_max,
-        "failure_mode": mode,
-        "failure_ply_index": imax,
-    }
+    fig.tight_layout()
+    if out_path is not None:
+        plt.savefig(out_path, dpi=DPI)
+        plt.close(fig)
+    else:
+        plt.show()
 
 
-def plot_loaded_hole_field(
+def plot_fi_field(
     field: dict[str, np.ndarray],
     fi_field: dict[str, np.ndarray],
     hole_radius: float,
     layup: list[float],
+    sigma_xx_inf: float,
+    sigma_yy_inf: float,
+    tau_xy_inf: float,
     load: float,
     thickness: float,
     theta: float,
-    title: str = None,
     out_path: str = None,
-    ) -> None:
+) -> None:
     """
-    Single figure: mid-plane strains, LaRC05 component FIs, FI_max, and governing
+    3×3 panel: mid-plane strains, LaRC05 component FIs, FI_max, and governing
     failure mode (ply-enveloped argmax of UVARM1-5).
     """
     X = field["X"]
     Y = field["Y"]
-    epsilon_x = field["epsilon_x"]
-    epsilon_y = field["epsilon_y"]
-    gamma_xy = field["gamma_xy"]
+    theta_deg = np.rad2deg(theta)
 
-    if title is None:
-        theta_deg = np.rad2deg(theta)
-        title = (
-            f"Loaded hole field: layup={layup}; "
-            f"load={load} N, thickness={thickness} mm, "
-            f"theta={theta_deg:.1f} deg; "
-            f"FI_max={fi_field['FI_max'].max():.2f}"
-        )
+    title = (
+        f"Combined loading (ply-enveloped FI): layup={layup}\n"
+        f"bypass: σxx={sigma_xx_inf}, σyy={sigma_yy_inf}, "
+        f"τxy={tau_xy_inf} MPa  |  "
+        f"bearing: {load} N, t={thickness} mm, θ={theta_deg:.1f}°  |  "
+        f"FI_max={fi_field['FI_max'].max():.2f}"
+    )
 
     fig, ax = plt.subplots(3, 3, figsize=(18, 15))
-    fig.suptitle(title, fontsize=12)
+    fig.suptitle(title, fontsize=11)
 
     strain_titles = [
-        r"Mid-plane $\epsilon_{0,x}$",
-        r"Mid-plane $\epsilon_{0,y}$",
+        r"Mid-plane $\varepsilon_{0,x}$",
+        r"Mid-plane $\varepsilon_{0,y}$",
         r"Mid-plane $\gamma_{0,xy}$",
     ]
-    strain_data = [epsilon_x, epsilon_y, gamma_xy]
+    strain_data = [field["epsilon_x"], field["epsilon_y"], field["gamma_xy"]]
     for i in range(3):
         cf = ax[0, i].contourf(X, Y, strain_data[i], levels=60)
         ax[0, i].add_patch(plt.Circle((0, 0), hole_radius, color="black", fill=False))
         ax[0, i].set_title(strain_titles[i])
         ax[0, i].set_aspect("equal")
-        ax[0, i].set_xlabel("x")
-        ax[0, i].set_ylabel("y")
+        ax[0, i].set_xlabel("x (mm)")
+        ax[0, i].set_ylabel("y (mm)")
         fig.colorbar(cf, ax=ax[0, i], shrink=0.85)
 
     fi_keys_titles = [
@@ -295,23 +381,22 @@ def plot_loaded_hole_field(
         ax[r, c].add_patch(plt.Circle((0, 0), hole_radius, color="black", fill=False))
         ax[r, c].set_title(fi_title)
         ax[r, c].set_aspect("equal")
-        ax[r, c].set_xlabel("x")
-        ax[r, c].set_ylabel("y")
+        ax[r, c].set_xlabel("x (mm)")
+        ax[r, c].set_ylabel("y (mm)")
         fig.colorbar(cf, ax=ax[r, c], shrink=0.85)
 
     cf_mode = ax[2, 2].contourf(
-        X,
-        Y,
+        X, Y,
         fi_field["failure_mode"],
         levels=np.arange(0.5, 6.5, 1.0),
-        cmap=_FAILURE_MODE_CMAP_BASE,
+        cmap=_FAILURE_MODE_CMAP,
         extend="neither",
     )
     ax[2, 2].add_patch(plt.Circle((0, 0), hole_radius, color="black", fill=False))
     ax[2, 2].set_title("Failure mode (ply-enveloped max)")
     ax[2, 2].set_aspect("equal")
-    ax[2, 2].set_xlabel("x")
-    ax[2, 2].set_ylabel("y")
+    ax[2, 2].set_xlabel("x (mm)")
+    ax[2, 2].set_ylabel("y (mm)")
     cbar_m = fig.colorbar(
         cf_mode, ax=ax[2, 2], shrink=0.85, ticks=[1, 2, 3, 4, 5], extend="neither"
     )
@@ -325,30 +410,27 @@ def plot_loaded_hole_field(
         plt.show()
 
 
-def plot_loaded_hole_boundary_face(
+def plot_hole_boundary_face(
     theta_deg: np.ndarray,
     z_edges: np.ndarray,
     value_map: np.ndarray,
     cbar_label: str,
     title: str = None,
     out_path: str = None,
-    ) -> None:
+) -> None:
     """
-    Plot 2D contour map: x=hole-edge angle, y=thickness, color=value.
+    2D pcolormesh: x=hole-edge angle, y=thickness coordinate, colour=value.
     """
     dtheta = float(theta_deg[1] - theta_deg[0])
     theta_edges = np.concatenate([theta_deg, [theta_deg[-1] + dtheta]])
     theta_grid, z_grid = np.meshgrid(theta_edges, z_edges)
 
     if title is None:
-        title = (
-            f"Loaded hole boundary face distribution: "
-            f"FI_max={value_map.max():.2f}"
-        )
+        title = f"Hole boundary face: FI_max={value_map.max():.2f}"
 
     fig, ax = plt.subplots(figsize=(10, 5))
     pc = ax.pcolormesh(theta_grid, z_grid, value_map, shading="flat")
-    ax.set_xlabel("Hole-edge angle theta (deg)")
+    ax.set_xlabel("Hole-edge angle (deg)")
     ax.set_ylabel("Thickness coordinate z (mm)")
     ax.set_title(title)
     fig.colorbar(pc, ax=ax, label=cbar_label)
@@ -361,6 +443,10 @@ def plot_loaded_hole_boundary_face(
         plt.show()
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
 
     os.makedirs(os.path.join(path, "images"), exist_ok=True)
@@ -369,11 +455,21 @@ if __name__ == "__main__":
     ply_thickness = 0.125
     thickness = len(layup) * ply_thickness   # total plate thickness (mm)
     hole_radius = 1.0
-    load = 1000.0   # bearing force (N)
-    theta = 0.0     # bearing along +x direction (radians)
 
-    field, results_by_plies = evaluate_laminate_loaded_hole_field(
+    # Bypass: 100 MPa uniaxial tension in x-direction at infinity
+    sigma_xx_inf = 100.0
+    sigma_yy_inf = 0.0
+    tau_xy_inf = 0.0
+
+    # Bearing: 1000 N along +x axis
+    load = 1000.0
+    theta = 0.0   # radians
+
+    field, results_by_plies = evaluate_laminate_combined_load_field(
         layup=layup,
+        sigma_xx_inf=sigma_xx_inf,
+        sigma_yy_inf=sigma_yy_inf,
+        tau_xy_inf=tau_xy_inf,
         load=load,
         thickness=thickness,
         theta=theta,
@@ -385,23 +481,42 @@ if __name__ == "__main__":
 
     fi_field = envelope_fi_of_all_plies(results_by_plies)
     boundary = extract_hole_boundary_field(field, len(layup), results_by_plies)
-    global_FI_max = fi_field["FI_max"].max()
 
-    plot_loaded_hole_field(
+    plot_midplane_field(
+        field=field,
+        hole_radius=hole_radius,
+        layup=layup,
+        sigma_xx_inf=sigma_xx_inf,
+        sigma_yy_inf=sigma_yy_inf,
+        tau_xy_inf=tau_xy_inf,
+        load=load,
+        thickness=thickness,
+        theta=theta,
+        out_path=os.path.join(path, "images", "combined_midplane_field.png"),
+    )
+
+    plot_fi_field(
         field=field,
         fi_field=fi_field,
         hole_radius=hole_radius,
         layup=layup,
+        sigma_xx_inf=sigma_xx_inf,
+        sigma_yy_inf=sigma_yy_inf,
+        tau_xy_inf=tau_xy_inf,
         load=load,
         thickness=thickness,
         theta=theta,
-        out_path=os.path.join(path, "images", "loaded_hole_field.png"),
+        out_path=os.path.join(path, "images", "combined_fi_field.png"),
     )
 
-    plot_loaded_hole_boundary_face(
+    plot_hole_boundary_face(
         theta_deg=boundary["theta_deg"],
         z_edges=boundary["z_edges"],
         value_map=boundary["fi_max_map"],
         cbar_label="FI_max",
-        out_path=os.path.join(path, "images", "loaded_hole_face.png"),
+        title=(
+            f"Combined loading - hole boundary FI_max: layup={layup}\n"
+            f"bypass σxx={sigma_xx_inf} MPa | bearing {load} N"
+        ),
+        out_path=os.path.join(path, "images", "combined_boundary_face.png"),
     )

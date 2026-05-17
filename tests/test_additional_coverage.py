@@ -16,7 +16,7 @@ from lamkit.lekhnitskii.utils import (
     rotate_strain,
     rotate_stress,
 )
-from lamkit.utils import evaluate_unloaded_hole_plate
+from lamkit.utils import evaluate_combined_load_plate, evaluate_larc05_from_results
 
 
 def _isotropic_compliance(E: float, nu: float) -> np.ndarray:
@@ -163,12 +163,15 @@ def test_evaluate_unloaded_hole_stress_field_shapes_and_types() -> None:
     x = np.array([2.0], dtype=float)  # keep away from hole boundary (hole_radius=1.0)
     y = np.array([0.0], dtype=float)
 
-    results_by_plies, mid_plane_field = evaluate_unloaded_hole_plate(
+    results_by_plies, mid_plane_field = evaluate_combined_load_plate(
         laminate=lam,
-        hole_radius=1.0,
         sigma_xx_inf=100.0,
         sigma_yy_inf=0.0,
         tau_xy_inf=0.0,
+        load=0.0,
+        angle_load_degree=0.0,
+        hole_radius=1.0,
+        thickness=lam.total_thickness,
         x=x,
         y=y,
     )
@@ -177,6 +180,9 @@ def test_evaluate_unloaded_hole_stress_field_shapes_and_types() -> None:
     assert mid_plane_field["epsilon_x"].shape == x.shape
     assert mid_plane_field["epsilon_y"].shape == x.shape
     assert mid_plane_field["gamma_xy"].shape == x.shape
+
+    evaluate_larc05_from_results(results_by_plies,
+                                lam.ply_material.properties_dictionary)
 
     sample = results_by_plies[0]
     assert sample["sigma_x"].shape == x.shape

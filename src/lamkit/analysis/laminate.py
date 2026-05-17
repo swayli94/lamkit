@@ -125,6 +125,13 @@ class Laminate():
         Number of plies in the laminate.
         '''
         return len(self.plies)
+    
+    @property
+    def total_thickness(self) -> float:
+        '''
+        Total thickness of the laminate (mm).
+        '''
+        return self._total_thickness
 
     @property
     def stacking_sequence(self) -> List[float]:

@@ -37,7 +37,9 @@ from lamkit.analysis.material import IM7_8551_7, Material, Ply
 from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
 from lamkit.lekhnitskii.utils import generate_meshgrid
 from lamkit.lekhnitskii.homogenisation import compute_homogenised_properties
-from lamkit.utils import evaluate_unloaded_hole_plate, create_effective_laminate_for_buckling_analysis
+from lamkit.utils import (evaluate_combined_load_plate,
+                evaluate_larc05_from_results,
+                create_effective_laminate_for_buckling_analysis)
 from lamkit.layup.requirements import EngineeringRequirements
 
 
@@ -95,15 +97,20 @@ def evaluate_laminate_design(
     x = mesh["X"]
     y = mesh["Y"]
 
-    results_by_plies, mid_plane_field = evaluate_unloaded_hole_plate(
+    results_by_plies, mid_plane_field = evaluate_combined_load_plate(
         laminate=laminate,
-        hole_radius=hole_radius_mm,
         sigma_xx_inf=sigma_xx_inf,
         sigma_yy_inf=sigma_yy_inf,
         tau_xy_inf=tau_xy_inf,
+        load=0.0,
+        angle_load_degree=0.0,
+        hole_radius=hole_radius_mm,
+        thickness=total_thickness,
         x=x,
         y=y,
     )
+    evaluate_larc05_from_results(results_by_plies,
+        properties_dictionary=laminate.ply_material.properties_dictionary)
 
     max_abs_u = float(np.max(np.abs(mid_plane_field["u"])))
     fi_max = float(max(np.max(ply_result["FI_max"]) for ply_result in results_by_plies))

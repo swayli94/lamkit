@@ -16,6 +16,13 @@ The package exports the main classes directly from ``lamkit``:
        LayupFeasibilityRating,
    )
 
+The Lekhnitskii bearing and combined-load classes live in their own submodules:
+
+.. code-block:: python
+
+   from lamkit.lekhnitskii.loaded_hole import LoadedHole
+   from lamkit.lekhnitskii.combined_load import CombinedLoadHole
+
 Build a simple laminate and evaluate ply-level response:
 
 .. code-block:: python
@@ -35,12 +42,12 @@ Build a simple laminate and evaluate ply-level response:
    print(field[["index_ply", "index_surface", "sigma_1", "FI_max"]].head())
    print("global FI_max =", field.attrs["global_FI_max"])
 
-Evaluate an open-hole plate for the same laminate:
+Evaluate an open-hole plate under combined bypass and bearing loading:
 
 .. code-block:: python
 
    import numpy as np
-   from lamkit.utils import evaluate_unloaded_hole_plate
+   from lamkit.utils import evaluate_combined_load_plate, evaluate_larc05_from_results
    from lamkit.lekhnitskii.utils import generate_meshgrid
 
    mesh = generate_meshgrid(
@@ -50,18 +57,30 @@ Evaluate an open-hole plate for the same laminate:
        n_points_angular=121,
    )
 
-   results_by_plies, mid_plane = evaluate_unloaded_hole_plate(
+   # bypass: 100 MPa in x; bearing: 1000 N along +x (angle 0 deg)
+   results_by_plies, mid_plane = evaluate_combined_load_plate(
        laminate=lam,
-       hole_radius=1.0,
        sigma_xx_inf=100.0,
        sigma_yy_inf=0.0,
        tau_xy_inf=0.0,
+       load=1000.0,
+       angle_load_degree=0.0,
+       hole_radius=1.0,
+       thickness=lam.total_thickness,
        x=mesh["X"],
        y=mesh["Y"],
    )
 
+   evaluate_larc05_from_results(results_by_plies,
+       properties_dictionary=lam.ply_material.properties_dictionary)
+
    print("mid-plane sigma_x max =", np.max(mid_plane["sigma_x"]))
    print("ply-surface FI_max max =", max(np.max(p["FI_max"]) for p in results_by_plies))
+
+Pass ``load=0.0`` (and keep the bypass stresses) for a pure bypass / open-hole analysis,
+or pass ``sigma_xx_inf=sigma_yy_inf=tau_xy_inf=0.0`` for bearing-only.  Both cases use
+:class:`~lamkit.lekhnitskii.combined_load.CombinedLoadHole` internally (zero-contribution
+components are replaced by a no-op ``ZeroField`` for efficiency).
 
 Layup guidelines and database-based feasibility use ``EngineeringRequirements`` and
 ``LayupFeasibilityRating``. The rating step builds a KD-tree and requires SciPy_.

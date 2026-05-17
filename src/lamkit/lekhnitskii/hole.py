@@ -7,6 +7,104 @@ import numpy as np
 from typing import Tuple, Dict
 
 
+class ZeroField():
+    '''
+    An empty field with zero stress, strain, and displacement everywhere.
+    '''
+    def __init__(self) -> None:
+        pass
+
+    def phi_1(self, z1: np.ndarray) -> np.ndarray:
+        return np.zeros_like(z1)
+    
+    def phi_2(self, z2: np.ndarray) -> np.ndarray:
+        return np.zeros_like(z2)
+    
+    def phi_1_prime(self, z1: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        return np.zeros_like(z1), np.zeros_like(z1)
+    
+    def phi_2_prime(self, z2: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        return np.zeros_like(z2), np.zeros_like(z2)
+    
+    def stress(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        '''
+        Zero stress at (x, y) points in the plate
+
+        Parameters
+        ----------
+        x : np.ndarray
+            1D array x locations in the cartesian coordinate system
+        y : np.ndarray
+            1D array y locations in the cartesian coordinate system
+
+        Returns
+        -------
+        stresses: np.ndarray
+            (n, 3) in-plane stress components.
+        '''
+        return np.zeros((x.shape[0], 3))
+
+    def displacement(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        '''
+        Zero displacement at (x, y) points in the plate
+
+        Parameters
+        ----------
+        x : np.ndarray of shape (n,)
+            x locations in the cartesian coordinate system
+        y : np.ndarray of shape (n,)
+            y locations in the cartesian coordinate system
+
+        Returns
+        -------
+        displacements: np.ndarray
+            (n, 2) array of in-plane displacement components.
+        '''
+        return np.zeros((x.shape[0], 2))
+
+    def calculate_field_results(self, x: np.ndarray, y: np.ndarray, 
+                    out_shape: Tuple[int, int]|None = None) -> Dict[str, np.ndarray]:
+        '''
+        Zero stress, strain, and displacement at (x, y) points in the plate.
+
+        Parameters
+        ----------
+        x, y : np.ndarray of shape (n,)
+            x and y locations in the cartesian coordinate system
+        out_shape: Tuple[int, int]|None
+            shape of the output array
+        '''
+        # Check if x and y are 1D arrays
+        if x.ndim != 1 or y.ndim != 1:
+            raise ValueError("x and y must be 1D arrays")
+        
+        # Check if x and y have the same length
+        if x.size != y.size:
+            raise ValueError("x and y must have the same length")
+
+        if out_shape is None:
+            _out_shape = (x.size,)
+        else:
+            _out_shape = out_shape
+
+        return {
+            'sigma_x': np.zeros(_out_shape),
+            'sigma_y': np.zeros(_out_shape),
+            'tau_xy': np.zeros(_out_shape),
+            'epsilon_x': np.zeros(_out_shape),
+            'epsilon_y': np.zeros(_out_shape),
+            'gamma_xy': np.zeros(_out_shape),
+            'u': np.zeros(_out_shape),
+            'v': np.zeros(_out_shape),
+            'Real(phi_1_prime)': np.zeros(_out_shape),
+            'Real(phi_2_prime)': np.zeros(_out_shape),
+            'Imag(phi_1_prime)': np.zeros(_out_shape),
+            'Imag(phi_2_prime)': np.zeros(_out_shape),
+            'sign_xi1': np.zeros(_out_shape),
+            'sign_xi2': np.zeros(_out_shape),
+            }
+
+
 class Hole(abc.ABC):
     '''
     Abstract parent class for defining a hole in an anisotropic infinite plate
@@ -308,11 +406,29 @@ class Hole(abc.ABC):
 
         return displacements
 
+    def get_strain_from_stress(self, stresses: np.ndarray) -> np.ndarray:
+        '''
+        Calculates the strain from the stress using the compliance matrix.
+
+        Parameters
+        ----------
+        stresses : np.ndarray of shape (n, 3)
+            in-plane stress components at (x, y) points in the cartesian coordinate system
+            [[sx0, sy0, sxy0], [sx1, sy1, sxy1], ... , [sxn, syn, sxyn]]
+
+        Returns
+        -------
+        strains : np.ndarray of shape (n, 3)
+            in-plane strain components at (x, y) points in the cartesian coordinate system
+            [[epsilon_x0, epsilon_y0, gamma_xy0], ... , [epsilon_xn, epsilon_yn, gamma_xyn]]
+        '''
+        return stresses @ self.s.T
+
     # ------------------------------
     # For detailed analysis
     # ------------------------------
     def calculate_field_results(self, x: np.ndarray, y: np.ndarray, 
-                                out_shape: Tuple[int, int] = None) -> Dict[str, np.ndarray]:
+                    out_shape: Tuple[int, int]|None = None) -> Dict[str, np.ndarray]:
         '''
         Calculates stress, strain, and displacement at (x, y) points in the plate.
 
@@ -320,7 +436,7 @@ class Hole(abc.ABC):
         ----------
         x, y : np.ndarray of shape (n,)
             x and y locations in the cartesian coordinate system
-        out_shape: Tuple[int, int]
+        out_shape: Tuple[int, int]|None
             shape of the output array
         
         Returns
@@ -329,8 +445,7 @@ class Hole(abc.ABC):
             Dictionary containing stress, strain, displacement, and auxiliary fields
             'sigma_x', 'sigma_y', 'tau_xy': np.ndarray of shape (n,)
             'epsilon_x', 'epsilon_y', 'gamma_xy': np.ndarray of shape (n,)
-                in-plane strains from ``epsilon = S @ sigma`` (engineering shear `gamma_xy`)
-            'u', 'v': np.ndarray of shape (n,) — x, y displacements (same as `displacement`)
+            'u', 'v': np.ndarray of shape (n,)
             'sign_xi1', 'sign_xi2': np.ndarray of shape (n,)
             'Real(phi_1_prime)', 'Real(phi_2_prime)', 'Imag(phi_1_prime)', 'Imag(phi_2_prime)'
         '''
@@ -356,14 +471,10 @@ class Hole(abc.ABC):
         sigma_y = 2.0 * np.real(phi_1_prime + phi_2_prime)
         tau_xy = -2.0 * np.real(mu1 * phi_1_prime + mu2 * phi_2_prime)
 
-        # Strain components: [epsilon_x, epsilon_y, gamma_xy]^T = S @ [sigma_x, sigma_y, tau_xy]^T
-        stress_stack = np.stack([sigma_x, sigma_y, tau_xy], axis=0)
-        strain_stack = self.s @ stress_stack
-        epsilon_x = strain_stack[0]
-        epsilon_y = strain_stack[1]
-        gamma_xy = strain_stack[2]
+        # Strain components: epsilon_x, epsilon_y, gamma_xy
+        epsilon_x, epsilon_y, gamma_xy = self.s @ np.stack([sigma_x, sigma_y, tau_xy])
 
-        # Displacement components (Lekhnitskii potentials; see ``displacement``)
+        # Displacement components (Lekhnitskii potentials; see `displacement`)
         disp = self.displacement(x, y)
         u = disp[:, 0]
         v = disp[:, 1]

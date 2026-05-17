@@ -1,9 +1,5 @@
 '''
 Example of LoadedHole (cosine bearing load distribution) using Lekhnitskii theory.
-
-For theta=0, ``calculate_field_results`` (inherited from ``Hole``) returns stresses and
-stress-function data directly in the global frame.  For theta != 0, use ``solution.stress()``
-which handles the coordinate rotation internally.
 '''
 import os
 import sys
@@ -42,9 +38,6 @@ def plot_stress_field(
     ) -> None:
     '''
     Plot the stress field (sigma_xx, sigma_yy, tau_xy) for a loaded hole.
-
-    Uses ``LoadedHole.stress()`` which correctly handles the bearing-angle
-    rotation for any value of ``theta``.
     '''
     hole_radius = diameter / 2.0
     meshgrid = generate_meshgrid(hole_radius=hole_radius, plate_radius=length_plot,
@@ -54,8 +47,8 @@ def plot_stress_field(
     Y = meshgrid['Y']
     out_shape = X.shape
 
-    solution = LoadedHole(load=load, diameter=diameter, thickness=thickness,
-                          a_inv=compliance_matrix, theta=theta)
+    solution = LoadedHole(load=load, radius=hole_radius, thickness=thickness,
+                          compliance_matrix=compliance_matrix, theta=theta)
 
     x_flat = np.atleast_1d(X).ravel()
     y_flat = np.atleast_1d(Y).ravel()
@@ -124,8 +117,8 @@ def plot_stress_field_details(
     Y = meshgrid['Y']
     out_shape = meshgrid['meshgrid_shape']
 
-    solution = LoadedHole(load=load, diameter=diameter, thickness=thickness,
-                          a_inv=compliance_matrix, theta=theta)
+    solution = LoadedHole(load=load, radius=hole_radius, thickness=thickness,
+                          compliance_matrix=compliance_matrix, theta=theta)
 
     x_flat = np.atleast_1d(X).ravel()
     y_flat = np.atleast_1d(Y).ravel()

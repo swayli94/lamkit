@@ -1,30 +1,11 @@
 '''
 Loaded hole in an infinite anisotropic homogeneous plate
 '''
-
 import numpy as np
-from typing import Callable, Tuple
+from typing import Tuple
 
 from lamkit.lekhnitskii.hole import Hole
 from lamkit.lekhnitskii.utils import rotate_material_matrix, rotate_stress
-
-
-def _remove_bad_displacements(displacement_func: 
-    Callable[[object, np.ndarray, np.ndarray], np.ndarray]):
-    '''
-    Removes displacements that are 180 degrees behind bearing load direction
-    '''
-    def inner(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        # call displacement function
-        displacements = displacement_func(self, x, y)
-        # check if any points are 180 degrees behind bearing load
-        r, angles = self._cartesian_to_polar(x, y)
-        bad_angle = np.pi if self.theta == 0 else -1*(np.pi - self.theta)
-        # if so, replace those results with np.nan
-        displacements[np.isclose(angles, bad_angle)] = np.nan
-        return displacements
-
-    return inner 
 
 
 class LoadedHole(Hole):
@@ -33,32 +14,23 @@ class LoadedHole(Hole):
 
     A cosine bearing load distribution is assumed to apply to the inside of the hole.
 
-    Notes
-    -----
-    Bearing distribution as shown below Ref. [4]_
-
-    .. image:: ../img/cosine_distribution.png
-       :height: 400px
-
     Parameters
     ----------
     load : float
-        bearing force
-    diameter : float
-        hole diameter
+        Bearing force (N)
+    radius : float
+        Hole radius (mm)
     thickness : float
-        plate thickness
-    a_inv : array_like
-        2D array (3, 3) inverse CLPT A-matrix
+        Plate thickness (mm)
+    compliance_matrix : array_like
+        2D array (3, 3) inverse CLPT A-matrix (units: 1/MPa)
     theta : float, optional
-        bearing angle counter clock-wise from positive x-axis (radians)
+        Bearing angle counter-clockwise from positive x-axis (radians)
 
     Attributes
     ----------
     p : float
         bearing force
-    theta : float
-        bearing angle counter clock-wise from positive x-axis (radians)
     A : float
         real part of equilibrium constant for first stress function
     A_bar : float
@@ -71,10 +43,9 @@ class LoadedHole(Hole):
     '''
     FOURIER_TERMS = 45  # number of fourier series terms [3]_
 
-    def __init__(self, load: float, diameter: float, thickness: float,
-                 a_inv: np.ndarray, theta: float = 0.) -> None:
-        a_inv = rotate_material_matrix(a_inv, angle=theta)
-        radius = diameter / 2.0
+    def __init__(self, load: float, radius: float, thickness: float,
+                 compliance_matrix: np.ndarray, theta: float = 0.) -> None:
+        a_inv = rotate_material_matrix(compliance_matrix, angle=theta)
         super().__init__(radius=radius, compliance_matrix=a_inv)
         self.h = thickness
         self.p = load
@@ -382,7 +353,6 @@ class LoadedHole(Hole):
         stresses = super().stress(x, y)
         return rotate_stress(stresses, angle=-self.theta)
 
-    @_remove_bad_displacements
     def displacement(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         '''
         Calculates the displacement at (x, y) points in the plate
@@ -400,6 +370,9 @@ class LoadedHole(Hole):
             (n, 2) array of in-plane displacement components in the cartesian coordinate system
             [[u0, v0], [u1, v1], ... , [un, vn]]
         '''
-        # rotate points to account for bearing angle
+        _, angles = self._cartesian_to_polar(x, y)
+        bad_angle = np.pi if self.theta == 0 else -1*(np.pi - self.theta)
         x, y = self._rotate_points(x, y)
-        return super().displacement(x, y)
+        displacements = super().displacement(x, y)
+        displacements[np.isclose(angles, bad_angle)] = np.nan
+        return displacements
