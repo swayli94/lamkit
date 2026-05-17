@@ -214,12 +214,3 @@ def evaluate_larc05_from_results(
 
     return results_by_plies
 
-
-'''
-Provide access to the homogenisation functions.
-'''
-
-__all__ = [
-    'evaluate_combined_load_plate',
-    'evaluate_larc05_from_results'
-]

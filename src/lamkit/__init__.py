@@ -1,11 +1,11 @@
-__version__ = '0.1.4'
+__version__ = '0.1.5'
 
 
 from .analysis.material import Material, Ply
 from .analysis.laminate import Laminate
 from .analysis.larc05 import LaRC05
 from lamkit.lekhnitskii.hole import Hole
-from lamkit.lekhnitskii.unloaded_hole import UnloadedHole
+from lamkit.lekhnitskii.combined_load import CombinedLoadHole
 from lamkit.layup.requirements import EngineeringRequirements
 from lamkit.layup.feasibility import LayupFeasibilityRating
 
@@ -15,7 +15,7 @@ __all__ = [
     'Laminate',
     'LaRC05',
     'Hole',
-    'UnloadedHole',
+    'CombinedLoadHole',
     'EngineeringRequirements',
     'LayupFeasibilityRating',
 ]
