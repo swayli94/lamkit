@@ -82,6 +82,31 @@ or pass ``sigma_xx_inf=sigma_yy_inf=tau_xy_inf=0.0`` for bearing-only.  Both cas
 :class:`~lamkit.lekhnitskii.combined_load.CombinedLoadHole` internally (zero-contribution
 components are replaced by a no-op ``ZeroField`` for efficiency).
 
+A laminate can also be defined directly by lamination parameters (no ply
+stacking); the A/B/D matrices then come from the closed-form
+lamination-parameter expressions and can feed e.g. the Ritz buckling
+analysis:
+
+.. code-block:: python
+
+   from lamkit import Laminate, Ply
+   from lamkit.analysis.buckling import BucklingAnalysis
+   from lamkit.analysis.material import IM7_8551_7
+
+   ply = Ply(IM7_8551_7, thickness=0.125)
+   lp = Laminate.get_lamination_parameters([0.0, 90.0, 90.0, 0.0])
+   lam_lp = Laminate(
+       stacking={"xiA": lp["xiA"], "xiD": lp["xiD"], "T": 4 * 0.125},
+       plies=ply,
+   )
+
+   analysis = BucklingAnalysis(
+       laminate=lam_lp, a=100.0, b=100.0, constraints="PINNED",
+       Nxx=-1.0, m=6, n=6,
+   )
+   eigvals, _ = analysis.buckling_analysis(num_eigvalues=5)
+   print("load multipliers (ascending):", eigvals)
+
 Layup guidelines and database-based feasibility use ``EngineeringRequirements`` and
 ``LayupFeasibilityRating``. The rating step builds a KD-tree and requires SciPy_.
 

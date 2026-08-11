@@ -13,8 +13,7 @@ from itertools import product
 from typing import Dict, Iterable, Tuple
 
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import eigsh
+from scipy.linalg import eigh
 import matplotlib.pyplot as plt
 import os
 
@@ -328,15 +327,38 @@ class BucklingAnalysis:
         """
         Solve the generalized eigenvalue buckling problem.
 
-        The current implementation uses the bending-only matrices from
+        The implementation uses the bending-only matrices from
         `calc_K_KG_D` and solves:
             KG * phi = lambda * K * phi
-        then converts to load multipliers as `-1/lambda`.
+        then converts to load multipliers as ``-1/lambda``.
+
+        Sign convention: with a compressive pre-buckling load (e.g.
+        ``Nxx < 0``) KG is negative semi-definite, so lambda < 0 and the
+        load multiplier ``-1/lambda`` is positive. The critical buckling
+        load is the smallest positive multiplier times the applied load
+        state.
+
+        The Ritz system is small (``m*n`` degrees of freedom), so the
+        generalized problem is solved densely with `scipy.linalg.eigh`,
+        which is exact and fast at this size. `eigh` requires K to be
+        positive definite and raises `numpy.linalg.LinAlgError` otherwise
+        (e.g. a bending matrix outside the lamination-parameter feasible
+        region).
+
+        Note: an earlier version used `scipy.sparse.linalg.eigsh` with
+        ``which="SM", sigma=1.0, mode="cayley"``. That shift-invert mode
+        biases the iteration towards eigenvalues near +1 and can miss the
+        true first buckling mode entirely (on a verification layup it
+        returned a critical load of 274.6 N/mm where the correct value is
+        11.57 N/mm); the dense solve does not have this problem.
 
         Parameters
         ----------
         num_eigvalues : int, default 5
-            Requested number of lowest-magnitude eigenvalues.
+            Number of eigenpairs to return. Positive load multipliers are
+            returned first in ascending order (most critical first); if
+            fewer than `num_eigvalues` positive multipliers exist, the
+            remaining slots are filled with non-positive multipliers.
 
         Returns
         -------
@@ -344,12 +366,16 @@ class BucklingAnalysis:
             Eigenvalues (load multipliers) and eigenvectors.
         """
         K, KG = self.calc_K_KG_D()
-        K, KG = csr_matrix(K), csr_matrix(KG)
 
-        k = min(int(num_eigvalues), KG.shape[0] - 2)
-        eigvals, eigvecs = eigsh(A=KG, k=k, which="SM", M=K, tol=0.0, sigma=1.0, mode="cayley")
-        eigvals = -1.0 / eigvals
+        k = min(int(num_eigvalues), KG.shape[0])
+        eigvals_all, eigvecs_all = eigh(KG, K)
+        multipliers = -1.0 / eigvals_all
 
+        # Order: positive multipliers ascending (critical first), then the rest.
+        order = np.argsort(np.where(multipliers > 0, multipliers, np.inf), kind="stable")
+        sel = order[:k]
+
+        eigvals, eigvecs = multipliers[sel], eigvecs_all[:, sel]
         self.eigenvalue, self.eigenvector = eigvals, eigvecs
         return eigvals, eigvecs
 

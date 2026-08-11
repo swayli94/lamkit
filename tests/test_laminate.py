@@ -145,3 +145,63 @@ def test_physical_trends() -> None:
     lam_d = Laminate(seq, [ply_thick] * 4)
     ratio = np.linalg.norm(lam_d.D) / np.linalg.norm(lam_s.D)
     assert 7.0 < ratio < 9.0, f"doubling thickness: ||D|| should be ~8x, got ratio={ratio}"
+
+
+def test_lp_dict_construction_matches_ply_stacking() -> None:
+    # What: a Laminate built from a lamination-parameter dict {'xiA','xiB','xiD','T'}
+    #   must return the stored xiA/xiB/xiD and A/B/D/ABD equal to the ply-by-ply CLT result.
+    # Why: regression test -- the xiA/xiD properties used to recompute from the (empty)
+    #   stacking list even for dict input, and A/B/D integrated over an empty layup and
+    #   returned zero matrices, so the whole LP-dict path was unusable without subclassing.
+    t = 0.125
+    ply = Ply(IM7_8551_7, thickness=t)
+    # Non-symmetric and non-balanced so that xiB and B are nonzero too.
+    cases = (
+        [0, 45, 90, -30, 60],
+        [0, 90, 90, 0],
+        [30, -30, 10],
+    )
+    for stacking in cases:
+        lam_ref = Laminate(stacking, [ply] * len(stacking))
+        lp = Laminate.get_lamination_parameters(stacking)
+        lam_lp = Laminate(
+            {'xiA': lp['xiA'], 'xiB': lp['xiB'], 'xiD': lp['xiD'],
+             'T': len(stacking) * t},
+            ply,  # a single Ply must be accepted for dict construction
+        )
+        _assert_allclose(f"xiA dict vs stacking {stacking}", lam_lp.xiA, lam_ref.xiA)
+        _assert_allclose(f"xiB dict vs stacking {stacking}", lam_lp.xiB, lam_ref.xiB)
+        _assert_allclose(f"xiD dict vs stacking {stacking}", lam_lp.xiD, lam_ref.xiD)
+        _assert_allclose(f"A dict vs stacking {stacking}", lam_lp.A, lam_ref.A)
+        _assert_allclose(f"B dict vs stacking {stacking}", lam_lp.B, lam_ref.B)
+        _assert_allclose(f"D dict vs stacking {stacking}", lam_lp.D, lam_ref.D)
+        _assert_allclose(f"ABD dict vs stacking {stacking}", lam_lp.ABD, lam_ref.ABD)
+
+
+def test_lp_dict_requires_xiD_and_thickness() -> None:
+    # What: a lamination-parameter dict without 'xiD' or 'T' must raise KeyError.
+    # Why: the old code caught KeyError and then constructed (but did not raise) a new
+    #   KeyError, so a missing key surfaced later as an UnboundLocalError.
+    ply = Ply(IM7_8551_7, thickness=0.125)
+    with pytest.raises(KeyError):
+        Laminate({'xiA': [0, 0, 0, 0], 'T': 1.0}, ply)
+    with pytest.raises(KeyError):
+        Laminate({'xiD': [0, 0, 0, 0]}, ply)
+
+
+def test_lp_dict_missing_xiA_xiB() -> None:
+    # What: without 'xiA'/'xiB' keys, .xiA/.xiB raise ValueError while .B falls back to
+    #   zero (symmetric-laminate assumption); .D still works from 'xiD' alone.
+    # Why: bending-only LP problems (e.g. buckling) may define xiD only; the failure for
+    #   membrane quantities must be explicit rather than silently returning zeros.
+    t = 0.125
+    ply = Ply(IM7_8551_7, thickness=t)
+    lp = Laminate.get_lamination_parameters([0, 90, 90, 0])
+    lam_lp = Laminate({'xiD': lp['xiD'], 'T': 4 * t}, ply)
+    with pytest.raises(ValueError, match="xiA"):
+        lam_lp.xiA
+    with pytest.raises(ValueError, match="xiB"):
+        lam_lp.xiB
+    _assert_allclose("B fallback for symmetric laminate", lam_lp.B, np.zeros((3, 3)))
+    lam_ref = Laminate([0, 90, 90, 0], [ply] * 4)
+    _assert_allclose("D from xiD only", lam_lp.D, lam_ref.D)

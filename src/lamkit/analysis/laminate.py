@@ -31,6 +31,13 @@ class Laminate():
             xiB: [xiB1, xiB2, xiB3, xiB4],
             xiD: [xiD1, xiD2, xiD3, xiD4],
             T: thickness}
+            ``xiD`` and ``T`` are required; ``xiA`` and ``xiB`` are optional
+            (a missing ``xiB`` means a symmetric laminate, i.e. [B] = 0).
+            For a dict stacking, the stored lamination parameters are used
+            as given and the A/B/D matrices come from the closed-form
+            lamination-parameter expressions; ply-level operations
+            (``layup``, ``Q_layup``, ``evaluate_laminate``, ...) are not
+            available. ``plies`` may be a single Ply in this case.
     plies : Ply or list
         A single Ply or a list of Ply object
 
@@ -78,18 +85,20 @@ class Laminate():
                 xiA = stacking['xiA']
             except KeyError:
                 xiA = None
-            try:             
+            try:
                 xiB = stacking['xiB']
             except KeyError:
                 xiB = None
-            try: 
+            try:
                 xiD = stacking['xiD']
             except KeyError:
-                KeyError('xiD must be a key')
+                raise KeyError('xiD must be a key')
             try:
                 total_thickness = stacking['T']
             except KeyError:
-                KeyError('T must be a key')
+                raise KeyError('T must be a key')
+            if isinstance(plies, Ply):
+                plies = [plies]
             layup = []
 
         self.plies = plies
@@ -195,7 +204,20 @@ class Laminate():
         -------
         xiA : np.ndarray (4,)
             Lamination parameter xiA
+
+        Notes
+        -----
+        For a stacking defined by a lamination-parameter dict, the stored
+        ``xiA`` value is returned instead of being recomputed from a ply
+        stacking (which does not exist in that case).
         '''
+        if isinstance(self.stacking, dict):
+            if self._xiA is None:
+                raise ValueError(
+                    'xiA is required in stacking dict for extension parameters'
+                )
+            return np.asarray(self._xiA, dtype=float)
+
         xiA = np.zeros(4)
         T = sum([ply.thickness for ply in self.plies])        
         for i, angle in enumerate(self.stacking):
@@ -248,12 +270,25 @@ class Laminate():
     def xiD(self) -> np.ndarray:
         '''
         Lamination parameter xiD for bending
-        
+
         Returns
         -------
         xiD : np.ndarray (4,)
             Lamination parameter xiD
+
+        Notes
+        -----
+        For a stacking defined by a lamination-parameter dict, the stored
+        ``xiD`` value is returned instead of being recomputed from a ply
+        stacking (which does not exist in that case).
         '''
+        if isinstance(self.stacking, dict):
+            if self._xiD is None:
+                raise ValueError(
+                    'xiD is required in stacking dict for bending parameters'
+                )
+            return np.asarray(self._xiD, dtype=float)
+
         xiD = np.zeros(4)
         T = sum([ply.thickness for ply in self.plies])        
         for i, angle in enumerate(self.stacking):
@@ -272,13 +307,22 @@ class Laminate():
     def A(self) -> np.ndarray:
         '''
         [A] matrix of the laminate for extension.
-        
+
         Returns
         -------
         A : np.ndarray (3x3)
             [A] Matrix of the laminate
+
+        Notes
+        -----
+        For a stacking defined by a lamination-parameter dict, the matrix is
+        computed from the closed-form lamination-parameter expressions
+        (see `get_A_from_lamination_parameters`).
         '''
         if self._A is None:
+            if isinstance(self.stacking, dict):
+                self._A = self.get_A_from_lamination_parameters()
+                return self._A
             self._A = np.zeros(9).reshape(3,3)
 
             for i in enumerate(self.Q_layup):
@@ -296,8 +340,21 @@ class Laminate():
         -------
         B : np.ndarray (3x3)
             [B] matrix of the laminate
+
+        Notes
+        -----
+        For a stacking defined by a lamination-parameter dict, the matrix is
+        computed from the closed-form lamination-parameter expressions
+        (see `get_B_from_lamination_parameters`). If the dict has no ``xiB``
+        key, the laminate is assumed symmetric and [B] = 0.
         '''
         if self._B is None:
+            if isinstance(self.stacking, dict):
+                if self._xiB is None:
+                    self._B = np.zeros((3,3))
+                else:
+                    self._B = self.get_B_from_lamination_parameters()
+                return self._B
             self._B = np.zeros((3,3))
 
             for i in enumerate(self.Q_layup):
@@ -315,8 +372,17 @@ class Laminate():
         -------
         D : np.ndarray (3x3)
             [D] matrix of the laminate
+
+        Notes
+        -----
+        For a stacking defined by a lamination-parameter dict, the matrix is
+        computed from the closed-form lamination-parameter expressions
+        (see `get_D_from_lamination_parameters`).
         '''
         if self._D is None:
+            if isinstance(self.stacking, dict):
+                self._D = self.get_D_from_lamination_parameters()
+                return self._D
             self._D = np.zeros((3,3))
 
             for i in enumerate(self.Q_layup):

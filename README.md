@@ -53,6 +53,18 @@ field = laminate.evaluate_laminate(N)
 print(field[["index_ply", "index_surface", "z", "sigma_1", "sigma_2", "tau_12", "FI_max"]].head())
 ```
 
+A laminate can also be defined directly by lamination parameters, in which case the
+A/B/D matrices come from the closed-form lamination-parameter expressions (`xiD` and
+`T` are required; `xiA`/`xiB` optional, a missing `xiB` means a symmetric laminate):
+
+```python
+from lamkit import Laminate
+
+lp = Laminate.get_lamination_parameters([0.0, 90.0, 90.0, 0.0])
+lam_lp = Laminate(stacking={"xiA": lp["xiA"], "xiD": lp["xiD"], "T": 4 * 0.125}, plies=ply)
+print(lam_lp.D)  # identical to the ply-by-ply CLT result for that stacking
+```
+
 ## Examples
 
 The `example/` directory contains runnable scripts:
