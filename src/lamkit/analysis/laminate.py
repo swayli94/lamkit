@@ -241,7 +241,7 @@ class Laminate():
         Returns
         -------
         xiB : np.ndarray (4,)
-            (4/T²) Σ_k (z_{k+1}² - z_k²) [cos2θ, sin2θ, cos4θ, sin4θ] per ply k.
+            (2/T²) Σ_k (z_{k+1}² - z_k²) [cos2θ, sin2θ, cos4θ, sin4θ] per ply k.
         '''
         if isinstance(self.stacking, dict):
             if self._xiB is None:
@@ -263,7 +263,7 @@ class Laminate():
             xiB[2] += dz2 * np.cos(4*angle)
             xiB[3] += dz2 * np.sin(4*angle)
 
-        self._xiB = 4 * xiB / T**2
+        self._xiB = 2 * xiB / T**2
         return self._xiB
     
     @property
@@ -550,7 +550,7 @@ class Laminate():
         _, U2, U3, _, _ = self._ply_invariants()
         xi1, xi2, xi3, xi4 = self.xiB
         T = self._total_thickness
-        fac = T**2 / 8.0
+        fac = T**2 / 4.0
         # Invariant terms proportional to U1, U4, U5 drop out: Σ_k (z_{k+1}² - z_k²) = 0.
         B11 = fac * (U2*xi1 + U3*xi3)
         B12 = fac * (-U3*xi3)
@@ -667,7 +667,7 @@ class Laminate():
             xiD[3] += dz3 * s4
         
         xiA = xiA / n_ply
-        xiB = 4 * xiB / n_ply**2
+        xiB = 2 * xiB / n_ply**2
         xiD = 4 * xiD / n_ply**3
         
         return {
